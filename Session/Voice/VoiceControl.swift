@@ -3,9 +3,20 @@ import Observation
 
 // Owned by session 4 (Session/Voice/). CookSession only knows these protocols.
 
-/// What a cook can say while a recipe is open.
-nonisolated enum VoiceCommand: String, CaseIterable, Sendable {
+/// What a cook can say while a recipe is open. See `CommandMatcher` for the spoken forms.
+nonisolated enum VoiceCommand: Equatable, Sendable {
     case next, back, repeatStep, startTimer, stopTimer
+    /// Move the video by this many seconds (negative moves back). "Skip ahead ten seconds".
+    case skip(seconds: Int)
+    case pauseVideo, playVideo
+    /// "Go to step three": one-based, as spoken.
+    case goToStep(Int)
+    /// The ingredients slide.
+    case ingredients
+    /// Say what the current step needs.
+    case whatDoINeed
+    /// Say how long the timer (or the step) has left.
+    case timeLeft
 
     /// Short form for the UI ("Heard: start timer").
     var label: String {
@@ -15,8 +26,21 @@ nonisolated enum VoiceCommand: String, CaseIterable, Sendable {
         case .repeatStep: "repeat"
         case .startTimer: "start timer"
         case .stopTimer:  "stop timer"
+        case .skip(let seconds):
+            seconds >= 0 ? "skip ahead \(seconds) s" : "skip back \(-seconds) s"
+        case .pauseVideo: "pause"
+        case .playVideo:  "play"
+        case .goToStep(let n): "step \(n)"
+        case .ingredients: "ingredients"
+        case .whatDoINeed: "what do I need"
+        case .timeLeft:    "time left"
         }
     }
+
+    /// One example of each command, for help text and the recognizer's vocabulary.
+    static let examples: [VoiceCommand] = [.next, .back, .repeatStep, .startTimer, .stopTimer, .skip(seconds: 10),
+                                            .skip(seconds: -10), .pauseVideo, .playVideo, .goToStep(3), .ingredients,
+                                            .whatDoINeed, .timeLeft]
 }
 
 nonisolated enum VoiceStatus: Equatable, Sendable {

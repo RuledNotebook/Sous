@@ -395,8 +395,9 @@ private struct VoiceStatusBar: View {
 
     private var text: String {
         let status = session.voice.status
-        if session.speaker.isSpeaking { return "Reading aloud…" }
+        if session.speaker.isSpeaking { return "Speaking…" }
         if status.isListening, !session.voice.heard.isEmpty { return "…\(session.voice.heard)" }
+        if status.isListening { return "Say: next · back · skip ahead 10 seconds · pause · step 3 · what do I need · how long" }
         return session.voiceEnabled ? status.label : "Mic off"
     }
 }

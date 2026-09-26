@@ -49,6 +49,9 @@ struct RootView: View {
             .onChange(of: session.videoReplays) { _, _ in
                 if !plan.usesTwoPanels { showVideo = true }
             }
+            .onChange(of: session.videoSkip) { _, _ in
+                if !plan.usesTwoPanels { showVideo = true }   // steering the video by voice brings it up
+            }
         }
         .background(Theme.canvas)
         .tint(Theme.accent)

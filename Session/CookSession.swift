@@ -33,6 +33,10 @@ final class CookSession {
     }
     /// Bumped by "repeat": the video panel plays the current step's part again.
     private(set) var videoReplays = 0
+    /// "Skip ahead ten seconds": the video panel moves the player by `seconds`.
+    private(set) var videoSkip = VideoSkip(serial: 0, seconds: 0)
+    /// "Pause" / "play" said out loud: the video header applies it to the player.
+    private(set) var videoPlayback: VideoPlaybackRequest?
 
     let voice: any VoiceControl
     let speaker: any Speaker
@@ -238,13 +242,94 @@ final class CookSession {
         }
     }
 
+    /// A phrase as if the mic had heard it: matched like speech, then performed. Lets a text
+    /// field, a test or a debug script drive the same commands the voice does.
+    @discardableResult
+    func say(_ phrase: String) -> VoiceCommand? {
+        guard let command = CommandMatcher.match(phrase) else { return nil }
+        perform(command)
+        return command
+    }
+
     private func perform(_ command: VoiceCommand) {
+        NSLog("COOKALONG-VOICE %@", command.label)
         switch command {
         case .next:       next()
         case .back:       previous()
         case .repeatStep: repeatStep()
         case .startTimer: startTimer()
         case .stopTimer:  stopTimer()
+        case .skip(let seconds): skipVideo(by: seconds)
+        case .pauseVideo: setVideo(playing: false)
+        case .playVideo:  setVideo(playing: true)
+        case .goToStep(let number): goToSpokenStep(number)
+        case .ingredients: go(to: .overview)
+        case .whatDoINeed: speakNeeds()
+        case .timeLeft:    speakTimeLeft()
+        }
+    }
+
+    // MARK: Video timeline
+
+    /// Moves the video by `seconds` (negative goes back); nothing happens without a video.
+    func skipVideo(by seconds: Int) {
+        guard recipe?.videoID != nil, seconds != 0 else { return }
+        videoSkip = VideoSkip(serial: videoSkip.serial + 1, seconds: seconds)
+        NSLog("COOKALONG-VIDEO skip %d s", seconds)
+    }
+
+    func setVideo(playing: Bool) {
+        guard recipe?.videoID != nil else { return }
+        videoPlayback = VideoPlaybackRequest(serial: (videoPlayback?.serial ?? 0) + 1, play: playing)
+        NSLog("COOKALONG-VIDEO %@", playing ? "play" : "pause")
+    }
+
+    /// "Go to step three": one-based; out of range says so instead of doing nothing silently.
+    func goToSpokenStep(_ number: Int) {
+        let index = number - 1
+        if steps.indices.contains(index) {
+            goToStep(index)
+        } else if !steps.isEmpty {
+            speaker.speak("There are \(steps.count) steps.")
+        }
+    }
+
+    // MARK: Spoken answers
+
+    /// "What do I need": the current step's ingredients with their amounts.
+    func speakNeeds() {
+        guard let step = currentStep else {
+            if let recipe, slide == .overview {
+                speaker.speak("You need \(recipe.ingredients.joined(separator: ", ")).")
+            }
+            return
+        }
+        let needs = StepNeeds.needs(for: step)
+        if needs.isEmpty {
+            speaker.speak("Nothing to get out for this step.")
+        } else {
+            let list = needs.map { [$0.amount, $0.label].compactMap { $0 }.joined(separator: " ") }
+            speaker.speak("You need \(list.joined(separator: ", ")).")
+        }
+    }
+
+    /// "How long": the timer's remaining time, or the step's kitchen minutes when none is running.
+    func speakTimeLeft() {
+        if let timer {
+            let remaining = Int(timer.remaining(at: .now).rounded())
+            if remaining <= 0 {
+                speaker.speak("The timer is done.")
+            } else {
+                let minutes = remaining / 60, seconds = remaining % 60
+                var parts: [String] = []
+                if minutes > 0 { parts.append("\(minutes) minute\(minutes == 1 ? "" : "s")") }
+                if seconds > 0 || minutes == 0 { parts.append("\(seconds) second\(seconds == 1 ? "" : "s")") }
+                speaker.speak("\(parts.joined(separator: " and ")) left.")
+            }
+        } else if let step = currentStep {
+            speaker.speak("No timer running. This step takes about \(step.minutes) minute\(step.minutes == 1 ? "" : "s").")
+        } else if let recipe {
+            speaker.speak("About \(recipe.totalMinutes) minutes in all.")
         }
     }
 

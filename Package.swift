@@ -32,14 +32,15 @@ let package = Package(
         .target(
             name: "CookAlong",
             path: ".",
-            exclude: ["App", "Views", "Session", "Resources", "Legacy", "CookAlong.xcodeproj", "CookAlongTests",
+            exclude: ["App", "Views", "Resources", "Legacy", "CookAlong.xcodeproj", "CookAlongTests",
                       "Config", "Info.plist", "README.md", "Package.swift",
                       "Services/Images/StepImageProvider.swift", "Services/Images/ImageFinisher.swift",
                       "Services/Images/ImageGenerationAPI.swift", "Services/Images/StepImageService.swift",
                       "Services/Images/RemoteImageProvider.swift", "Services/Images/OpenAIImagesAPI.swift",
                       "Services/Images/StepImageCache.swift", "Services/Images/PriorityGate.swift",
                       "Services/Images/GeminiImageAPI.swift", "Services/Images/SceneArt.swift"],
-            sources: ["Models", "Services/Recipe", "Services/Images/KitchenAssets.swift", "Services/Images/SceneArtKey.swift"],
+            sources: ["Models", "Services/Recipe", "Services/Images/KitchenAssets.swift", "Services/Images/SceneArtKey.swift",
+                      "Session/Voice/CommandMatcher.swift", "Session/Voice/VoiceControl.swift"],
             swiftSettings: appSettings
         ),
         .testTarget(

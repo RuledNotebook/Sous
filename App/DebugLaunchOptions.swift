@@ -7,6 +7,11 @@ import SwiftUI
 ///   -autoDemo YES          load the demo recipe on launch, as if Demo were tapped
 ///   -autoDemoSlide 3       then jump to slide 3 (0 = ingredients, 1…n = steps, n+1 = done)
 ///   -autoDemoTimer YES     then start the step timer
+///   -autoVoice YES         turn voice control on once a recipe is showing (pair with
+///                          -voiceInputFile <audio> to feed spoken commands, see SpeechVoiceControl)
+///   -voiceScript "next step; skip ahead ten seconds; pause"
+///                          once a recipe is showing, run these phrases through the command matcher
+///                          three seconds apart, as if the mic had heard them (no recognizer needed)
 ///   -autoLink <url>        paste this YouTube link and press Make slideshow; the outcome (slide
 ///                          titles, instructions, or the error) is logged as COOKALONG-RESULT for `log show`
 ///   -autoLinkSlide 3       after the link loads, jump to slide 3
@@ -41,6 +46,8 @@ struct DebugLaunchOptions: ViewModifier {
                 await session.makeSlideshow()
                 switch session.phase {
                 case .ready:
+                    if defaults.bool(forKey: "autoVoice") { session.setVoice(enabled: true) }
+                    await runVoiceScript()
                     if let index = integer(forKey: "autoLinkSlide"), session.slides.indices.contains(index) {
                         session.go(to: session.slides[index])
                     }
@@ -59,6 +66,18 @@ struct DebugLaunchOptions: ViewModifier {
                 session.go(to: session.slides[index])
             }
             if defaults.bool(forKey: "autoDemoTimer") { session.startTimer() }
+            if defaults.bool(forKey: "autoVoice") { session.setVoice(enabled: true) }
+            await runVoiceScript()
+        }
+    }
+
+    /// Phrases from -voiceScript, spoken to the session a few seconds apart.
+    private func runVoiceScript() async {
+        guard let script = defaults.string(forKey: "voiceScript"), !script.isEmpty else { return }
+        for phrase in script.split(separator: ";").map({ $0.trimmingCharacters(in: .whitespaces) }) where !phrase.isEmpty {
+            try? await Task.sleep(for: .seconds(3))
+            let command = session.say(phrase)
+            NSLog("COOKALONG-SCRIPT %@ -> %@", phrase, command?.label ?? "(no command)")
         }
     }
 
