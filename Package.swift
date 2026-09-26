@@ -33,7 +33,7 @@ let package = Package(
             path: ".",
             exclude: ["App", "Views", "Session", "Resources", "Legacy", "CookAlong.xcodeproj", "CookAlongTests",
                       "Info.plist", "README.md", "Package.swift"],
-            sources: ["Models", "Services/Recipe", "Services/Images/KitchenAssets.swift"],
+            sources: ["Models", "Services/Recipe", "Services/Images/KitchenAssets.swift", "Services/Images/SceneArtKey.swift"],
             swiftSettings: appSettings
         ),
         .testTarget(

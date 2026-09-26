@@ -147,40 +147,69 @@ private struct StepDetails: View {
 
             Text(step.title).font(.title3.weight(.semibold))
                 .accessibilityAddTraits(.isHeader)
-            Text(step.instruction).font(.body)
 
-            if !step.tip.isEmpty {
-                Label(step.tip, systemImage: "lightbulb")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Tip: \(step.tip)")
-            }
+            // Just what the cook needs in hand: the words themselves stay in read-aloud.
+            NeedsRow(needs: StepNeeds.needs(for: step))
 
             if let timer = session.timer {
                 StepTimerView(timer: timer)
             } else if step.needsTimer {
-                Button { session.startTimer() } label: {
-                    Label("Start \(step.minutes) min timer", systemImage: "timer")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel("Start \(step.minutes) minute timer")
-            }
-
-            if let url = recipe.watchURL(for: step) {
-                Link(destination: url) {
-                    Label("Watch this part", systemImage: "play.rectangle")
-                }
-                .font(.subheadline)
-                .accessibilityHint("Opens YouTube at \(step.startSecond.clock)")
-                Text("Opens YouTube at \(step.startSecond.clock)")
-                    .font(.caption2).foregroundStyle(.tertiary)
+                timerButton.buttonStyle(.borderedProminent)
+            } else {
+                timerButton.buttonStyle(.bordered)
             }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.card, in: .rect(cornerRadius: 18))
         .animation(.snappy, value: step.id)
+    }
+
+    /// Loud when the step is a wait, quiet otherwise; either way one tap starts the step's minutes.
+    private var timerButton: some View {
+        Button { session.startTimer() } label: {
+            Label("\(step.minutes) min timer", systemImage: "timer")
+                .frame(maxWidth: .infinity)
+        }
+        .accessibilityLabel("Start \(step.minutes) minute timer")
+    }
+}
+
+/// Icons with a name and, when the step says so, an amount. Scrolls sideways when there are many.
+private struct NeedsRow: View {
+    let needs: [StepNeed]
+
+    var body: some View {
+        if needs.isEmpty {
+            Text("Nothing to get out for this step.")
+                .font(.subheadline).foregroundStyle(.secondary)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(Array(needs.enumerated()), id: \.offset) { _, need in
+                        VStack(spacing: 4) {
+                            BowlView(asset: need.asset, label: need.asset == nil ? need.label : nil, width: 52)
+                            Text(need.label.capitalized)
+                                .font(.caption2.weight(.medium))
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                            if let amount = need.amount {
+                                Text(amount)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                        }
+                        .frame(width: 76)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel([need.amount, need.label].compactMap { $0 }.joined(separator: " "))
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("What you need")
+        }
     }
 }
 
