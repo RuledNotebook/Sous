@@ -12,12 +12,20 @@ struct InputFormView: View {
         @Bindable var session = session
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Cook along to a YouTube video")
-                        .font(.title2.weight(.bold))
-                        .accessibilityAddTraits(.isHeader)
-                    Text("Paste the link. You get step-by-step slides with real kitchen times.")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                HStack(alignment: .center, spacing: 14) {
+                    Image(.logo)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 60, height: 60)
+                        .clipShape(.rect(cornerRadius: 14))
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Cook along to a YouTube video")
+                            .font(.title2.weight(.bold))
+                            .accessibilityAddTraits(.isHeader)
+                        Text("Paste the link. You get step-by-step slides with real kitchen times.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
