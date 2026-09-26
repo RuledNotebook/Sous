@@ -57,9 +57,10 @@ protocol RecipeMetadataProvider: Sendable {
 /// window and retrying when the model's context overflows), then merge, order, clamp and
 /// sanity-check the steps. Everything except the two model calls is deterministic and tested.
 struct ChunkedRecipePipeline: Sendable {
-    /// Rendered characters per window (~1,100 tokens). Leaves room in the ~4 k context for the
-    /// instructions, the schema and up to 8 generated steps; 6 k-character windows still fit.
-    var maxWindowCharacters = 4_500
+    /// Rendered characters per window (~750 tokens). Leaves room in the ~4 k context for the
+    /// instructions, the schema and up to 8 generated steps. Larger windows fit (6 k characters
+    /// still do) but the model then returns fewer, coarser steps.
+    var maxWindowCharacters = 3_000
     /// Lines shared by consecutive windows so a boundary step is seen whole at least once.
     var overlapLines = 2
     /// How many times a window may be halved before giving up on it.
@@ -128,14 +129,23 @@ struct ChunkedRecipePipeline: Sendable {
                 if let slides = StepConsolidation.apply(plan, to: steps) {
                     note("consolidated \(steps.count) steps into \(slides.count) slides")
                     steps = slides
+                } else if let slides = StepConsolidation.apply(StepConsolidation.repair(plan, stepCount: steps.count), to: steps) {
+                    note("consolidation plan repaired: \(steps.count) steps into \(slides.count) slides")
+                    steps = slides
                 } else {
-                    note("consolidation plan rejected (\(plan.slides.count) slides for \(steps.count) steps); keeping steps")
+                    note("consolidation plan unusable (\(plan.slides.count) slides for \(steps.count) steps); keeping steps")
                 }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 note("consolidation failed: \(error.localizedDescription)")
             }
+        }
+        if let promised = TotalTimeHint.minutes(in: videoTitle) {
+            let before = steps.reduce(0) { $0 + $1.minutes }
+            steps = TotalTimeHint.fit(steps, to: promised)
+            let after = steps.reduce(0) { $0 + $1.minutes }
+            if after != before { note("title promises \(promised) min: scaled unspoken minutes \(before) -> \(after)") }
         }
         let allIngredients = Self.dedupeIngredients(ingredients)
 
@@ -198,9 +208,11 @@ struct ChunkedRecipePipeline: Sendable {
         let starts = TimestampClamper.clamp(merged.map(\.startSecond), videoDuration: videoDuration)
         return zip(merged, starts).map { s, start in
             let minutes = MinutesEstimator.minutes(model: s.minutes, title: s.title, instruction: s.instruction, isHandsOn: s.isHandsOn)
-            let needsTimer = MinutesEstimator.needsTimer(model: s.needsTimer, title: s.title, instruction: s.instruction)
-            return RecipeStep(title: capitalized(s.title.trimmingCharacters(in: .whitespacesAndNewlines)),
-                              instruction: s.instruction.trimmingCharacters(in: .whitespacesAndNewlines),
+            // A timer the model merely suggested is only worth it for a few minutes or more.
+            let spoken = MinutesEstimator.explicitMinutes(in: s.title + ". " + s.instruction) != nil
+            let needsTimer = MinutesEstimator.needsTimer(model: s.needsTimer && (spoken || minutes >= 3), title: s.title, instruction: s.instruction)
+            return RecipeStep(title: capitalized(CaptionFixes.apply(to: s.title.trimmingCharacters(in: .whitespacesAndNewlines))),
+                              instruction: CaptionFixes.apply(to: s.instruction.trimmingCharacters(in: .whitespacesAndNewlines)),
                               startSecond: Int(start.rounded()), minutes: minutes, isHandsOn: s.isHandsOn,
                               needsTimer: needsTimer, tip: s.tip, imagePrompt: s.imagePrompt,
                               vessel: Vessel(rawValue: s.vessel), items: s.items.isEmpty ? nil : s.items)
@@ -217,7 +229,8 @@ struct ChunkedRecipePipeline: Sendable {
     static func dedupeIngredients(_ raw: [String]) -> [String] {
         var out: [String] = []
         for item in raw {
-            let trimmed = item.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Asset-style names ("ginger_root") sometimes leak into the ingredient list; make them readable.
+            let trimmed = CaptionFixes.apply(to: item.replacingOccurrences(of: "_", with: " ").trimmingCharacters(in: .whitespacesAndNewlines))
             guard !trimmed.isEmpty else { continue }
             let words = StepMerger.contentWords(trimmed)
             guard !words.isEmpty else { continue }

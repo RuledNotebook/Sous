@@ -105,6 +105,87 @@ struct StepConsolidationTests {
         #expect(StepConsolidation.apply(plan, to: steps) == nil)
     }
 
+    @Test func repairsASloppyPlanFromItsSlideStarts() throws {
+        // Overlapping, gappy, unordered, and one index out of range; step 0 not mentioned.
+        let sloppy = SlidePlan(slides: [
+            .init(title: "finish", stepIndices: [3, 9]),
+            .init(title: "season", stepIndices: [1, 2]),
+            .init(title: "", stepIndices: [1, 3]),
+        ])
+        let repaired = StepConsolidation.repair(sloppy, stepCount: 4)
+        #expect(repaired.slides.map(\.stepIndices) == [[0], [1, 2], [3]])
+        #expect(repaired.slides.map(\.title) == ["", "season", "finish"])
+        let slides = try #require(StepConsolidation.apply(repaired, to: steps))
+        // "season"/"finish" say nothing the grouped steps say, so the first step's title stands.
+        #expect(slides.map(\.title) == ["Sear the mince", "Add spring onion", "Boil the noodles"])
+        #expect(StepConsolidation.repair(SlidePlan(slides: []), stepCount: 2).slides.map(\.stepIndices) == [[0, 1]])
+    }
+
+    @Test func waitsStandAloneAndLongGapsSplitASlide() throws {
+        // The model lumps everything into one slide.
+        let plan = SlidePlan(slides: [.init(title: "cook it all", stepIndices: [0, 1, 2, 3])])
+        let slides = try #require(StepConsolidation.apply(plan, to: steps))
+        // 0-2 are one hands-on stretch (406-424 s); 3 is a wait at 700 s.
+        #expect(slides.map(\.startSecond) == [406, 700])
+        #expect(slides[0].title == "Sear the mince")            // "cook it all" says nothing the steps say
+        #expect(slides[1].title == "Boil the noodles")
+        #expect(StepConsolidation.split([0, 1, 2, 3], in: steps) == [[0, 1, 2], [3]])
+
+        var farApart = steps
+        farApart[2].startSecond = 424 + 200
+        #expect(StepConsolidation.split([0, 1, 2], in: farApart) == [[0, 1], [2]])
+    }
+
+    @Test func onlyRealWaitsAndVesselChangesSplitASlide() {
+        var s = steps
+        // A "waiting" step with no wait verb and a small number is just a mislabelled action.
+        s[1].isHandsOn = false; s[1].minutes = 3
+        #expect(StepConsolidation.split([0, 1, 2], in: s) == [[0, 1, 2]])
+        s[1].minutes = 10
+        #expect(StepConsolidation.split([0, 1, 2], in: s) == [[0], [1], [2]])
+        var v = steps
+        v[0].vessel = .pan; v[1].vessel = .pan; v[2].vessel = .bowl
+        #expect(StepConsolidation.split([0, 1, 2], in: v) == [[0, 1], [2]])
+    }
+
+    @Test func combinedHandsOnMinutesStayRealistic() {
+        let eight = (0..<3).map { i in
+            RecipeStep(title: ["Grate ginger", "Slice garlic", "Slice bok choy"][i], instruction: "Do it.", startSecond: 200 + i * 20,
+                       minutes: 8, isHandsOn: true, needsTimer: false, tip: "", imagePrompt: "")
+        }
+        #expect(StepConsolidation.combine(eight, title: "Prep aromatics").minutes == StepConsolidation.combinedHandsOnCap)
+        var spoken = eight
+        spoken[0].instruction = "Grate the ginger, about 10 minutes of work."
+        #expect(StepConsolidation.combine(spoken, title: "Prep aromatics").minutes == 24)
+    }
+
+    @Test func titleTotalTimeScalesUnspokenMinutes() {
+        #expect(TotalTimeHint.minutes(in: "The 15-minute Homemade Ramen You'll Never Get Sick Of | Marion's Kitchen") == 15)
+        #expect(TotalTimeHint.minutes(in: "30 Minute Chicken Curry") == 30)
+        #expect(TotalTimeHint.minutes(in: "2 hour braise") == 120)
+        #expect(TotalTimeHint.minutes(in: "Top 10 mistakes") == nil)
+        #expect(TotalTimeHint.minutes(in: nil) == nil)
+
+        let long = [
+            RecipeStep(title: "Boil eggs", instruction: "Boil the eggs for 7 minutes.", startSecond: 60, minutes: 7, isHandsOn: false, needsTimer: true, tip: "", imagePrompt: ""),
+            RecipeStep(title: "Grate ginger", instruction: "Grate the ginger.", startSecond: 200, minutes: 8, isHandsOn: true, needsTimer: false, tip: "", imagePrompt: ""),
+            RecipeStep(title: "Sear mince", instruction: "Sear the mince.", startSecond: 400, minutes: 8, isHandsOn: true, needsTimer: false, tip: "", imagePrompt: ""),
+            RecipeStep(title: "Add toppings", instruction: "Add the toppings.", startSecond: 800, minutes: 8, isHandsOn: true, needsTimer: false, tip: "", imagePrompt: ""),
+        ]
+        let fitted = TotalTimeHint.fit(long, to: 15)
+        #expect(fitted[0].minutes == 7)                       // a wait with a spoken time, untouched
+        #expect(fitted.dropFirst().allSatisfy { $0.minutes == 5 })   // 24 hands-on minutes -> 15
+        #expect(fitted.reduce(0) { $0 + $1.minutes } == 22)
+        #expect(TotalTimeHint.fit(long, to: 20) == long)      // 24 hands-on is within reason of 20
+        var wait = long
+        wait[1].isHandsOn = false; wait[1].instruction = "Simmer the stock."
+        #expect(TotalTimeHint.fit(wait, to: 15)[1].minutes == 8)    // waits are never scaled
+        var timed = long
+        timed[3].needsTimer = true
+        let tiny = TotalTimeHint.fit(timed, to: 6)                   // 24 hands-on min -> 6: 2 min each
+        #expect(tiny[3].minutes == 2 && !tiny[3].needsTimer)
+    }
+
     @Test func listsStepsForTheModel() {
         let text = StepConsolidation.listing(steps)
         #expect(text.hasPrefix("1. [6:46] Sear the mince (5 min, hands-on)"))
@@ -122,5 +203,14 @@ struct MinutesCapTests {
         #expect(MinutesEstimator.minutes(model: 40, title: "Let the dough rise", instruction: "Cover and leave somewhere warm.", isHandsOn: false) == 40)
         // A spoken duration always wins.
         #expect(MinutesEstimator.minutes(model: 1, title: "Serve", instruction: "Rest for ten minutes first.", isHandsOn: false) == 10)
+    }
+}
+
+struct CaptionFixesTests {
+    @Test func fixesCommonMisHearings() {
+        #expect(CaptionFixes.apply(to: "Stir in gacha jang and soy sauce, then heat the walk.") == "Stir in gochujang and soy sauce, then heat the wok.")
+        #expect(CaptionFixes.apply(to: "Gotcha Jang paste") == "gochujang paste")
+        #expect(CaptionFixes.apply(to: "Take a walk after dinner.") == "Take a wok after dinner.")   // known cost of the map
+        #expect(CaptionFixes.apply(to: "Boil the noodles.") == "Boil the noodles.")
     }
 }

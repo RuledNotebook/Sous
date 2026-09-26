@@ -184,8 +184,9 @@ nonisolated enum TimestampClamper {
 /// model's guess is capped (small models also say "15 minutes" for tossing pasta).
 nonisolated enum MinutesEstimator {
     static let maximumMinutes = 24 * 60
-    /// Longest plausible unspoken hands-on step (a big chop, kneading); longer ones get said out loud.
-    static let handsOnCap = 8
+    /// Longest plausible unspoken hands-on step; anything longer gets said out loud. Small
+    /// models answer "8" or "10" for almost everything, so this is the effective default.
+    static let handsOnCap = 5
     /// Longest plausible unspoken wait (a dough rise); anything longer is normally said out loud.
     static let waitingCap = 180
 
@@ -252,9 +253,9 @@ nonisolated enum MinutesEstimator {
         (["freeze"], 60),
         (["marinate", "chill", "refrigerate", "rise", "proof", "prove", "soak", "brine"], 30),
         (["bake", "roast"], 20),
-        (["simmer", "braise", "stew", "caramelize", "caramelise", "rest", "cool"], 15),
+        (["braise", "stew", "caramelize", "caramelise", "rest", "cool"], 15),
         (["preheat"], 10),
-        (["boil", "reduce", "steam", "knead", "poach"], 8),
+        (["simmer", "boil", "reduce", "steam", "knead", "poach"], 8),
         (["grill", "broil"], 6),
         (["fry", "fried", "sauté", "saute", "sear", "brown", "toast", "chop", "dice", "slice", "mince", "peel", "grate"], 3),
     ].map { (Set($0.0.map(StepMerger.stem)), $0.1) }

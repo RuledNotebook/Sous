@@ -55,7 +55,11 @@ struct GeminiVideoRecipeExtractor: VideoRecipeExtractor {
         guard status == 200 else {
             throw RecipeSourceError.cloud("HTTP \(status): \(Self.errorMessage(from: data))")
         }
-        return try Self.parseRecipe(from: data)
+        var recipe = try Self.parseRecipe(from: data)
+        if let promised = TotalTimeHint.minutes(in: video.title) {
+            recipe.steps = TotalTimeHint.fit(recipe.steps, to: promised)
+        }
+        return recipe
     }
 
     func makeRequest(for video: VideoMetadata) throws -> URLRequest {

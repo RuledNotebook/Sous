@@ -93,10 +93,12 @@ nonisolated enum RecipePrompts {
     static let windowInstructions = """
         You turn one section of a cooking video transcript into cooking steps.
         \(rules)
-        List only ingredients mentioned in this section, with amounts if spoken. \
-        If nothing is cooked in this section, return no steps.
+        ingredients: only those mentioned in this section, written as a cook would say them, with \
+        amounts if spoken (for example "2 tbsp soy sauce"). If nothing is cooked in this section, \
+        return no steps.
         vessel is where the step happens: pot, pan, bowl, board, oven or plate. \
-        items are the ingredients used in the step, chosen only from: \(KitchenAssets.promptList.joined(separator: ", ")).
+        items is different from ingredients: the picture assets for the step, chosen only from this \
+        list of asset names: \(KitchenAssets.promptList.joined(separator: ", ")).
         """
 
     static func windowPrompt(_ window: TranscriptWindow, videoDuration: Double) -> String {
