@@ -292,13 +292,15 @@ struct SlideshowBar: View {
                     voiceToggle
                 }
 
-                Toggle(isOn: $session.readAloud) {
-                    Label("Read aloud", systemImage: session.readAloud ? "speaker.wave.2.fill" : "speaker.slash")
+                if session.recipe?.videoID == nil {
+                    Toggle(isOn: $session.readAloud) {
+                        Label("Read aloud", systemImage: session.readAloud ? "speaker.wave.2.fill" : "speaker.slash")
+                    }
+                    .toggleStyle(.button)
+                    .labelStyle(.iconOnly)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityLabel("Read each slide aloud")
                 }
-                .toggleStyle(.button)
-                .labelStyle(.iconOnly)
-                .frame(minWidth: 44, minHeight: 44)
-                .accessibilityLabel("Read each slide aloud")
 
                 Spacer(minLength: 0)
 

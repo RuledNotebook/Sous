@@ -26,10 +26,13 @@ final class CookSession {
     private(set) var stepImages: [RecipeStep.ID: UIImage] = [:]
     private(set) var timer: CountdownTimer?
     private(set) var voiceEnabled = false
-    /// Speak each slide as it appears.
-    var readAloud = true {
+    /// Speak each slide as it appears. Off: the video's own audio plays for every step, and the
+    /// slides carry the words. Kept so it can be switched back on.
+    var readAloud = false {
         didSet { if readAloud { speakCurrentSlide() } else { speaker.stopSpeaking() } }
     }
+    /// Bumped by "repeat": the video panel plays the current step's part again.
+    private(set) var videoReplays = 0
 
     let voice: any VoiceControl
     let speaker: any Speaker
@@ -177,8 +180,14 @@ final class CookSession {
         speakCurrentSlide()
     }
 
-    /// Say the current slide again, even with read-aloud off.
-    func repeatStep() { speakCurrentSlide(force: true) }
+    /// Play the current step's part of the video again; without a video, say the slide instead.
+    func repeatStep() {
+        if recipe?.videoID != nil, currentStep != nil {
+            videoReplays += 1
+        } else {
+            speakCurrentSlide(force: true)
+        }
+    }
 
     // MARK: Ingredients
 

@@ -1,7 +1,7 @@
 # CookAlong — Bitrig Hacks
 
 Paste a YouTube cooking video to get a recipe with an ingredient checklist, illustrated
-steps, a video panel that follows the current step, kitchen timers, read-aloud, and voice
+steps, a video panel that follows the current step, kitchen timers, optional read-aloud, and voice
 commands. Captions can be fetched automatically; a pasted transcript is optional.
 Built for the iOS 27 SDK and the iPhone Duo.
 
@@ -9,7 +9,7 @@ Built for the iOS 27 SDK and the iPhone Duo.
 YouTube link (+ optional transcript) ──► RecipeSource ──► Recipe { steps[…] }
                                                                │
                               CookSession ◄────────────────────┘
-                                  ├──► kitchen scenes + video
+                                  ├──► kitchen scenes + video + step needs
                                   └──► timer + voice + narration
 ```
 
@@ -17,7 +17,8 @@ YouTube link (+ optional transcript) ──► RecipeSource ──► Recipe { s
 
 `Views/RootView.swift` sizes everything from its container, never `UIScreen`.
 On the Duo's closed display, one scrollable cooking panel uses the full screen and keeps
-slide, voice and read-aloud controls above the home indicator. A native menu jumps to any
+slide and voice controls above the home indicator. Read-aloud is available for recipes
+without a video; video audio is the default when one is present. A native menu jumps to any
 step, and the video opens in a sheet. On the inner display, the video and details share
 one side of the physical centre line, while the illustrated slideshow occupies the other.
 The panels sit side by side when wide and stack when rotated. The layout breakpoint is
@@ -34,8 +35,8 @@ appearance setting.
 
 | Folder | Responsibility |
 |---|---|
-| `Services/Recipe/` | YouTube metadata, captions and recipe extraction |
-| `Services/Images/` | Bundled kitchen art and optional remote step images |
+| `Services/Recipe/` | YouTube metadata, captions, recipe extraction and per-step needs |
+| `Services/Images/` | Bundled kitchen art, optional cached scene art and remote step images |
 | `Session/Voice/` | Voice commands, narration and timer notifications |
 | `Session/CookSession.swift` | Recipe, slide, checklist, timer and voice state |
 | `Views/` | Adaptive cooking UI, video and step scenes |
@@ -53,7 +54,7 @@ captions and either Apple Intelligence on the device or a configured model key.
 
 // Services/Images/StepImageProvider.swift
 @MainActor protocol StepImageProvider {
-func image(for step: RecipeStep, in recipe: Recipe) async -> UIImage?   // optional remote image
+    func image(for step: RecipeStep, in recipe: Recipe) async -> UIImage?   // optional remote image
 }
 
 // Session/Voice/VoiceControl.swift
@@ -87,9 +88,8 @@ Bitrig and select this repository folder. Bitrig detects the `CookAlong` Xcode p
 and builds it for its built-in simulator. Use the **Fold** controls to try closed and
 open poses, and rotate the simulator to check the landscape layout. For a separate
 Xcode Simulator run, choose **Run on… → iPhone Duo → Play** from Bitrig's toolbar.
-The **Demo** button is the quickest in-app check and needs no keys. After this branch
-has been pushed to a repository you can access, **File → Add GitHub Repository…** is
-another way to import it.
+The **Demo** button is the quickest in-app check and needs no keys. **File → Add GitHub
+Repository…** can also import the pushed branch.
 
 To try a real YouTube link, copy `Config/Secrets.xcconfig.example` to the ignored
 `Config/Secrets.xcconfig` and enter your own keys. The usual path is `OPENAI_API_KEY` for

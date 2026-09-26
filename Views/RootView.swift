@@ -51,6 +51,9 @@ struct RootView: View {
                 }
             }
             .animation(.snappy, value: plan.usesTwoPanels)
+            .onChange(of: session.videoReplays) { _, _ in
+                if !plan.usesTwoPanels { showVideo = true }
+            }
         }
         .background(Theme.canvas)
         .tint(Theme.accent)

@@ -150,6 +150,7 @@ private struct StepDetails: View {
     let index: Int
     let count: Int
     let compact: Bool
+    @State private var localTicks: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -192,6 +193,34 @@ private struct StepDetails: View {
                     .accessibilityLabel("Tip: \(step.tip)")
             }
 
+            let needs = StepNeeds.needs(for: step)
+            if !needs.isEmpty {
+                Text("What you need")
+                    .font(.subheadline.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 10) {
+                        ForEach(Array(needs.enumerated()), id: \.offset) { _, need in
+                            let ingredientIndex = ingredientIndex(for: need)
+                            let ticked = ingredientIndex.map { session.checkedIngredients.contains($0) }
+                                ?? localTicks.contains(key(need))
+                            NeedChip(need: need, ticked: ticked) {
+                                if let ingredientIndex {
+                                    session.toggleIngredient(ingredientIndex)
+                                } else if localTicks.contains(key(need)) {
+                                    localTicks.remove(key(need))
+                                } else {
+                                    localTicks.insert(key(need))
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("What you need for this step")
+            }
+
             if let timer = session.timer {
                 StepTimerView(timer: timer)
             } else if step.needsTimer {
@@ -203,7 +232,13 @@ private struct StepDetails: View {
                 .accessibilityLabel("Start \(step.minutes) minute timer")
             }
 
-            if let url = recipe.watchURL(for: step) {
+            if !compact, recipe.videoID != nil {
+                Button { session.repeatStep() } label: {
+                    Label("Replay this part", systemImage: "arrow.counterclockwise.circle")
+                }
+                .frame(minHeight: 44, alignment: .leading)
+                .accessibilityLabel("Play this step's part of the video again")
+            } else if let url = recipe.watchURL(for: step) {
                 Link(destination: url) {
                     Label("Watch this part", systemImage: "play.rectangle")
                 }
@@ -218,6 +253,60 @@ private struct StepDetails: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.card, in: .rect(cornerRadius: 18))
         .animation(.snappy, value: step.id)
+    }
+
+    private func key(_ need: StepNeed) -> String { "\(step.id)-\(need.label.lowercased())" }
+
+    private func ingredientIndex(for need: StepNeed) -> Int? {
+        let assets = recipe.ingredientAssets
+        if let asset = need.asset, let index = assets.firstIndex(of: asset) { return index }
+        let label = need.label.lowercased()
+        return recipe.ingredients.firstIndex { $0.lowercased().contains(label) }
+    }
+}
+
+/// The amount and ingredient are one large tap target; ticks sync with the recipe checklist.
+private struct NeedChip: View {
+    let need: StepNeed
+    let ticked: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            VStack(spacing: 3) {
+                BowlView(asset: need.asset, label: need.asset == nil ? need.label : nil, width: 48)
+                    .overlay(alignment: .topTrailing) {
+                        if ticked {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.callout)
+                                .foregroundStyle(.white, Theme.actionFill)
+                                .offset(x: 4, y: -2)
+                        }
+                    }
+                Text(need.label.capitalized)
+                    .font(.caption2.weight(.medium))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .strikethrough(ticked)
+                    .foregroundStyle(ticked ? .secondary : .primary)
+                if let amount = need.amount {
+                    Text(amount)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: 74)
+            .frame(minHeight: 78)
+            .opacity(ticked ? 0.65 : 1)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .animation(.snappy, value: ticked)
+        .accessibilityLabel([need.amount, need.label].compactMap { $0 }.joined(separator: " "))
+        .accessibilityValue(ticked ? "checked" : "not checked")
+        .accessibilityHint("Double tap to \(ticked ? "uncheck" : "check")")
     }
 }
 
