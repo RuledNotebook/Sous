@@ -17,8 +17,9 @@ YouTube link (+ optional transcript) ──► RecipeSource ──► Recipe { s
 
 `Views/RootView.swift` sizes everything from its container, never `UIScreen`.
 On the Duo's closed display, one scrollable cooking panel uses the full screen and keeps
-slide and voice controls above the home indicator. Read-aloud is available for recipes
-without a video; video audio is the default when one is present. A native menu jumps to any
+slide and voice controls above the home indicator. Read-aloud remains an opt-in there,
+since the video's audio plays only while its sheet is open; on the inner display the
+video is visible and supplies the audio. A native menu jumps to any
 step, and the video opens in a sheet. On the inner display, the video and details share
 one side of the physical centre line, while the illustrated slideshow occupies the other.
 The panels sit side by side when wide and stack when rotated. The layout breakpoint is

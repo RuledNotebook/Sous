@@ -292,7 +292,7 @@ struct SlideshowBar: View {
                     voiceToggle
                 }
 
-                if session.recipe?.videoID == nil {
+                if compact || session.recipe?.videoID == nil {
                     Toggle(isOn: $session.readAloud) {
                         Label("Read aloud", systemImage: session.readAloud ? "speaker.wave.2.fill" : "speaker.slash")
                     }
