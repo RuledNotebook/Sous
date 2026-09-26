@@ -36,6 +36,8 @@ final class VideoController {
     var isCollapsed: Bool { manualCollapsed ?? detailsScrolled }
 
     func togglePlayback() { command = PlaybackCommand(serial: command.serial + 1, play: !isPlaying) }
+    /// Play or pause on request (a voice command); a repeat of the same request still counts.
+    func set(playing: Bool) { command = PlaybackCommand(serial: command.serial + 1, play: playing) }
     func toggleCollapsed() { manualCollapsed = !isCollapsed }
 
     /// Scrolling the details folds the header; scrolling back up unfolds it and forgets a manual choice.
@@ -59,6 +61,8 @@ struct YouTubePlayerView: UIViewRepresentable {
     let segment: VideoSegment?
     /// Any change plays `segment` again from its start ("repeat").
     var replay = 0
+    /// Any change moves the player by `seconds` and lets it run ("skip ahead ten seconds").
+    var skip = VideoSkip(serial: 0, seconds: 0)
     var command = PlaybackCommand(serial: 0, play: true)
     var controller: VideoController?
 
@@ -89,6 +93,11 @@ struct YouTubePlayerView: UIViewRepresentable {
             coordinator.commandSerial = command.serial
             coordinator.run("cook({seek: null, stopAt: null, play: \(command.play), keepStop: true})", in: web)
         }
+        if coordinator.skipSerial != skip.serial {
+            coordinator.skipSerial = skip.serial
+            // A skip leaves the step's stop point behind: the cook is steering the video now.
+            coordinator.run("cook({seek: null, stopAt: null, skip: \(skip.seconds), play: true})", in: web)
+        }
         guard !coordinator.sentFirstCommand || coordinator.segment != segment || coordinator.replay != replay else { return }
         coordinator.sentFirstCommand = true
         coordinator.segment = segment
@@ -107,6 +116,7 @@ struct YouTubePlayerView: UIViewRepresentable {
         var videoID = ""
         var segment: VideoSegment?
         var replay = 0
+        var skipSerial = 0
         var commandSerial = 0
         var sentFirstCommand = false
         weak var controller: VideoController?
@@ -171,7 +181,7 @@ struct YouTubePlayerView: UIViewRepresentable {
         function onYouTubeIframeAPIReady() {
           player = new YT.Player('player', {
             videoId: '\(videoID)',
-            playerVars: { playsinline: 1, controls: 1, rel: 0, modestbranding: 1, origin: '\(origin)' },
+            playerVars: { playsinline: 1, controls: 0, fs: 0, disablekb: 1, iv_load_policy: 3, rel: 0, modestbranding: 1, origin: '\(origin)' },
             events: {
               onReady: function () { ready = true; post(-2); if (pending) { apply(pending); pending = null; } },
               onStateChange: function (e) { post(e.data); }
@@ -181,6 +191,7 @@ struct YouTubePlayerView: UIViewRepresentable {
         function apply(cmd) {
           if (!cmd.keepStop) { stopAt = cmd.stopAt; }
           if (cmd.seek !== null && cmd.seek !== undefined) { player.seekTo(cmd.seek, true); }
+          if (cmd.skip) { player.seekTo(Math.max(0, player.getCurrentTime() + cmd.skip), true); }
           if (cmd.play) { player.playVideo(); } else { player.pauseVideo(); }
         }
         function cook(cmd) { if (ready) { apply(cmd); } else { pending = cmd; } }

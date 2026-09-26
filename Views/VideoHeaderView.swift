@@ -10,20 +10,18 @@ struct VideoHeaderView: View {
     /// False in the closed-pose sheet, where there is nothing to fold away for.
     var collapsible = true
 
+    /// Width available to the expanded player, measured once; the web view is laid out at this size
+    /// in both states and only scaled when folded, so WebKit never re-lays out mid-animation.
+    @State private var expandedWidth: CGFloat = 0
+
+    private static let miniSize = CGSize(width: 112, height: 63)
+
     var body: some View {
         if session.phase == .ready, let recipe = session.recipe, let videoID = recipe.videoID {
             let collapsed = collapsible && video.isCollapsed
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .center, spacing: 12) {
-                    Color.black
-                        .overlay {
-                            YouTubePlayerView(videoID: videoID, segment: segment(in: recipe),
-                                              replay: session.videoReplays, command: video.command, controller: video)
-                        }
-                        .aspectRatio(16 / 9, contentMode: .fit)
-                        .frame(maxWidth: collapsed ? 112 : .infinity)
-                        .clipShape(.rect(cornerRadius: collapsed ? 8 : 14))
-                        .accessibilityLabel("Cooking video")
+                    playerStage(videoID: videoID, recipe: recipe, collapsed: collapsed)
 
                     if collapsed {
                         VStack(alignment: .leading, spacing: 2) {
@@ -34,9 +32,12 @@ struct VideoHeaderView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        .transition(.opacity)
                         Spacer(minLength: 0)
                         playPauseButton(iconOnly: true)
+                            .transition(.opacity)
                         foldButton
+                            .transition(.opacity)
                     }
                 }
 
@@ -45,9 +46,9 @@ struct VideoHeaderView: View {
                         playPauseButton(iconOnly: false)
                         Button { session.repeatStep() } label: {
                             Label("Replay step", systemImage: "arrow.counterclockwise")
+                                .frame(minHeight: 44)
                         }
                         .buttonStyle(.bordered)
-                        .frame(minHeight: 44)
                         .disabled(session.currentStep == nil)
                         .accessibilityLabel("Play this step's part of the video again")
                         Spacer(minLength: 0)
@@ -56,20 +57,65 @@ struct VideoHeaderView: View {
                                 Image(systemName: "arrow.up.right.square")
                                     .frame(minWidth: 44, minHeight: 44)
                             }
+                            .buttonStyle(.bordered)
                             .accessibilityLabel("Open in YouTube")
                         }
                         if collapsible { foldButton }
                     }
                     .font(.subheadline)
+                    .transition(.opacity)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 8)
             .background(Theme.canvas)
-            .animation(.snappy, value: collapsed)
-            .animation(.snappy, value: video.isPlaying)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                let inner = max(width - 32, 1)
+                if abs(inner - expandedWidth) > 0.5 { expandedWidth = inner }
+            }
+            .animation(.smooth(duration: 0.35), value: collapsed)
+            .animation(.smooth(duration: 0.25), value: video.isPlaying)
         }
+    }
+
+    /// The player at its full size, scaled and clipped into the mini box when folded. Same view
+    /// identity in both states, so playback carries on. While folded and paused, the video's own
+    /// thumbnail covers YouTube's title bar and play button, which would otherwise fill the box.
+    private func playerStage(videoID: String, recipe: Recipe, collapsed: Bool) -> some View {
+        let full = CGSize(width: max(expandedWidth, 1), height: max(expandedWidth, 1) * 9 / 16)
+        let mini = Self.miniSize
+        let scale = collapsed ? mini.width / full.width : 1
+        return ZStack(alignment: .topLeading) {
+            Color.black
+                .overlay {
+                    YouTubePlayerView(videoID: videoID, segment: segment(in: recipe),
+                                      replay: session.videoReplays, command: video.command, controller: video)
+                }
+                .frame(width: full.width, height: full.height)
+                .scaleEffect(scale, anchor: .topLeading)
+
+            if collapsed, !video.isPlaying {
+                Color.black
+                    .overlay {
+                        AsyncImage(url: recipe.thumbnailURL) { phase in
+                            if let image = phase.image { image.resizable().scaledToFill() }
+                        }
+                    }
+                    .overlay {
+                        Image(systemName: "pause.fill")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(6)
+                            .background(.black.opacity(0.45), in: .circle)
+                    }
+                    .frame(width: mini.width, height: mini.height)
+                    .transition(.opacity)
+            }
+        }
+        .frame(width: collapsed ? mini.width : full.width, height: collapsed ? mini.height : full.height, alignment: .topLeading)
+        .clipShape(.rect(cornerRadius: collapsed ? 8 : 14))
+        .accessibilityLabel("Cooking video")
     }
 
     private func playPauseButton(iconOnly: Bool) -> some View {
