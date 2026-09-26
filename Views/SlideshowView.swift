@@ -13,7 +13,8 @@ struct SlideshowView: View {
                 SlideshowBar()
             }
         }
-        .padding(12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     @ViewBuilder private var stage: some View {

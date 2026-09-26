@@ -17,6 +17,7 @@ struct DetailsPanelView: View {
 
 private struct RecipeDetails: View {
     @Environment(CookSession.self) private var session
+    @Environment(VideoController.self) private var video
     let recipe: Recipe
     let compact: Bool
 
@@ -60,6 +61,10 @@ private struct RecipeDetails: View {
                 }
             }
             .padding()
+            .padding(.bottom, 8)
+        }
+        .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y > 32 } action: { _, scrolledDown in
+            if !compact { video.detailsScrolled(scrolledDown) }
         }
         .id(session.slide)
     }
