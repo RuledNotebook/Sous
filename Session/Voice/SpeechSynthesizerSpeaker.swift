@@ -24,7 +24,8 @@ final class SpeechSynthesizerSpeaker: Speaker {
     func speak(_ text: String) {
         synthesizer.stopSpeaking(at: .immediate)
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        // No explicit voice: AVSpeechSynthesisVoice(language:) looks voices up synchronously and
+        // can block the main thread indefinitely on a fresh simulator. The default voice is fine.
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         utterance.postUtteranceDelay = 0.2
         synthesizer.speak(utterance)

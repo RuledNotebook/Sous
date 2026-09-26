@@ -1,16 +1,12 @@
 # Xcode
-xcuserdata/
-*.xcuserstate
 DerivedData/
 build/
+xcuserdata/
+*.xcuserstate
 *.xcscmblueprint
-*.xccheckout
-# SwiftPM
-.build/
-.swiftpm/
-Package.resolved
+*.moved-aside
 # macOS
 .DS_Store
-# Editors
-*.swp
-*~
+# Swift package
+.build/
+.swiftpm/
