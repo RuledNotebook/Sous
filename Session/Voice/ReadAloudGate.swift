@@ -13,6 +13,7 @@ nonisolated final class ReadAloudGate: @unchecked Sendable {
     private let lock = NSLock()
     private var speaking = false
     private var endedAt = Date.distantPast
+    private var observers: [@MainActor (Bool) -> Void] = []
 
     var isSpeaking: Bool { lock.withLock { speaking } }
 
@@ -21,6 +22,21 @@ nonisolated final class ReadAloudGate: @unchecked Sendable {
         lock.withLock { speaking || date < endedAt.addingTimeInterval(grace) }
     }
 
-    func speechDidStart() { lock.withLock { speaking = true } }
-    func speechDidEnd()   { lock.withLock { speaking = false; endedAt = .now } }
+    /// Called on the main actor when speech starts (true) and ends (false).
+    func onChange(_ handler: @escaping @MainActor (Bool) -> Void) {
+        lock.withLock { observers.append(handler) }
+    }
+
+    func speechDidStart() { set(speaking: true) }
+    func speechDidEnd()   { set(speaking: false) }
+
+    private func set(speaking now: Bool) {
+        let handlers: [@MainActor (Bool) -> Void] = lock.withLock {
+            guard speaking != now else { return [] }
+            speaking = now
+            if !now { endedAt = .now }
+            return observers
+        }
+        for handler in handlers { Task { @MainActor in handler(now) } }
+    }
 }

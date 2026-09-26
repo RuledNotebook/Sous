@@ -40,7 +40,6 @@ final class SpeechVoiceControl: VoiceControl {
     @ObservationIgnored private var task: SFSpeechRecognitionTask?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var consumedWords = 0
-    @ObservationIgnored private var wasGated = false
     @ObservationIgnored private var restartWork: Task<Void, Never>?
     @ObservationIgnored private var watchdog: Task<Void, Never>?
     @ObservationIgnored private var tapInstalled = false
@@ -66,7 +65,19 @@ final class SpeechVoiceControl: VoiceControl {
     }
     #endif
 
-    init() {}
+    init() {
+        // Read-aloud starts: stop looking at input. Ends: wait out the grace period, then listen afresh.
+        gate.onChange { [weak self] speaking in self?.speakingDidChange(speaking) }
+    }
+
+    private func speakingDidChange(_ speaking: Bool) {
+        guard status == .listening else { return }
+        if speaking {
+            heard = ""
+        } else {
+            scheduleRestart(after: gate.grace)
+        }
+    }
 
     // MARK: Lifecycle
 
@@ -220,14 +231,11 @@ final class SpeechVoiceControl: VoiceControl {
         guard gen == generation, status == .listening else { return }
         if let text = event.text {
             failureStreak = 0
-            // The app is talking (or just stopped): drop what we hear, then start clean.
+            // The app is talking (or just stopped): drop what we hear; a fresh task starts after the grace period.
             if gate.shouldIgnoreInput() {
-                wasGated = true
                 log.debug("ignored while speaking: \(text, privacy: .public)")
-                if !gate.isSpeaking { scheduleRestart(after: gate.grace, generation: gen) }
                 return
             }
-            if wasGated { wasGated = false; beginTask(); return }
             heard = String(text.suffix(48))
             log.debug("heard: \(text, privacy: .public)")
             // Only words that arrived since the last command count.

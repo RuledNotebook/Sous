@@ -1,5 +1,6 @@
 import AVFoundation
 import Observation
+import os
 
 /// Read-aloud with AVSpeechSynthesizer. While it talks, `ReadAloudGate` keeps the mic from
 /// hearing it. Delegate callbacks arrive on the synthesizer's thread and are forwarded to the
@@ -11,12 +12,23 @@ final class SpeechSynthesizerSpeaker: Speaker {
     @ObservationIgnored private let synthesizer = AVSpeechSynthesizer()
     @ObservationIgnored private let relay = SpeechRelay(gate: .shared)
     @ObservationIgnored private var eventTask: Task<Void, Never>?
+    @ObservationIgnored private let log = Logger(subsystem: "com.cookalong.CookAlong", category: "speech")
 
     init() {
         synthesizer.delegate = relay
         let events = relay.events
         eventTask = Task { [weak self] in
-            for await speaking in events { self?.isSpeaking = speaking }
+            for await speaking in events {
+                self?.isSpeaking = speaking
+                self?.log.info("read-aloud \(speaking ? "started" : "finished", privacy: .public)")
+            }
+        }
+        // Diagnostic only, off the main thread: which voices this device has.
+        let log = log
+        Task.detached {
+            let voices = AVSpeechSynthesisVoice.speechVoices()
+            let english = voices.filter { $0.language.hasPrefix("en") }.map(\.name).prefix(6).joined(separator: ", ")
+            log.info("voices installed: \(voices.count), english: \(english, privacy: .public)")
         }
     }
 
