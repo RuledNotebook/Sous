@@ -258,13 +258,6 @@ private struct SlideshowBar: View {
                 .tint(session.voice.status.isListening ? .red : Theme.basil)
                 .accessibilityLabel("Voice control")
 
-                Toggle(isOn: $session.readAloud) {
-                    Label("Read aloud", systemImage: session.readAloud ? "speaker.wave.2.fill" : "speaker.slash")
-                }
-                .toggleStyle(.button)
-                .labelStyle(.iconOnly)
-                .accessibilityLabel("Read each slide aloud")
-
                 Spacer(minLength: 0)
 
                 Button { session.next() } label: { Image(systemName: "chevron.right") }

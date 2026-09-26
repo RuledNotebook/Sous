@@ -16,7 +16,7 @@ struct VideoPanelView: View {
         if session.phase == .ready, let recipe = session.recipe, let videoID = recipe.videoID {
             Color.black
                 .aspectRatio(16 / 9, contentMode: .fit)
-                .overlay { YouTubePlayerView(videoID: videoID, segment: segment(in: recipe)) }
+                .overlay { YouTubePlayerView(videoID: videoID, segment: segment(in: recipe), replay: session.videoReplays) }
                 .clipShape(.rect(cornerRadius: 14))
                 .padding(.horizontal, 12)
                 .padding(.top, 12)
@@ -37,6 +37,8 @@ struct VideoPanelView: View {
 struct YouTubePlayerView: UIViewRepresentable {
     let videoID: String
     let segment: VideoSegment?
+    /// Any change plays `segment` again from its start ("repeat").
+    var replay = 0
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -57,9 +59,10 @@ struct YouTubePlayerView: UIViewRepresentable {
     func updateUIView(_ web: WKWebView, context: Context) {
         let coordinator = context.coordinator
         if coordinator.videoID != videoID { coordinator.load(videoID, into: web) }
-        guard !coordinator.sentFirstCommand || coordinator.segment != segment else { return }
+        guard !coordinator.sentFirstCommand || coordinator.segment != segment || coordinator.replay != replay else { return }
         coordinator.sentFirstCommand = true
         coordinator.segment = segment
+        coordinator.replay = replay
         let command: String
         if let segment {
             command = "cook({seek: \(segment.start), stopAt: \(segment.end.map(String.init) ?? "null"), play: true})"
@@ -73,6 +76,7 @@ struct YouTubePlayerView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate {
         var videoID = ""
         var segment: VideoSegment?
+        var replay = 0
         var sentFirstCommand = false
         private var loaded = false
         private var pending: String?
