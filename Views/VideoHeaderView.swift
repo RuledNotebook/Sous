@@ -76,6 +76,9 @@ struct VideoHeaderView: View {
             }
             .animation(.smooth(duration: 0.35), value: collapsed)
             .animation(.smooth(duration: 0.25), value: video.isPlaying)
+            .onChange(of: session.videoPlayback) { _, request in
+                if let request { video.set(playing: request.play) }   // "pause" / "play", said out loud
+            }
         }
     }
 
@@ -90,7 +93,8 @@ struct VideoHeaderView: View {
             Color.black
                 .overlay {
                     YouTubePlayerView(videoID: videoID, segment: segment(in: recipe),
-                                      replay: session.videoReplays, command: video.command, controller: video)
+                                      replay: session.videoReplays, skip: session.videoSkip,
+                                      command: video.command, controller: video)
                 }
                 .frame(width: full.width, height: full.height)
                 .scaleEffect(scale, anchor: .topLeading)
