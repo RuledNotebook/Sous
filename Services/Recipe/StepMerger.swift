@@ -11,6 +11,8 @@ nonisolated struct StepCandidate: Hashable, Sendable {
     var needsTimer: Bool
     var tip: String = ""
     var imagePrompt: String = ""
+    var vessel: String = ""
+    var items: [String] = []
 
     // Provenance, used by the merge pass to pick the better of two duplicates.
     var windowIndex: Int = 0
@@ -182,8 +184,8 @@ nonisolated enum TimestampClamper {
 /// model's guess is capped (small models also say "15 minutes" for tossing pasta).
 nonisolated enum MinutesEstimator {
     static let maximumMinutes = 24 * 60
-    /// Longest plausible unspoken hands-on step (a big chop, kneading).
-    static let handsOnCap = 12
+    /// Longest plausible unspoken hands-on step (a big chop, kneading); longer ones get said out loud.
+    static let handsOnCap = 8
     /// Longest plausible unspoken wait (a dough rise); anything longer is normally said out loud.
     static let waitingCap = 180
 
@@ -193,7 +195,9 @@ nonisolated enum MinutesEstimator {
         }
         // Floors come from the title only: "rest of the butter" in an instruction is not a rest.
         let floor = passiveFloor(for: title)
-        let cap = isHandsOn ? handsOnCap : waitingCap
+        // A long unspoken wait must be a recognisable one (bake, simmer, rest); "Serve, 15 min" is a guess.
+        let isWait = !isHandsOn && floor > 1
+        let cap = isWait ? waitingCap : handsOnCap
         return clamp(max(min(model, cap), floor))
     }
 

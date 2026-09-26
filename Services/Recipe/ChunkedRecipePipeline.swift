@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Errors shared by every analyzer. Model-specific errors are mapped onto these so the pipeline
 /// and the UI never depend on a particular SDK.
@@ -46,27 +47,42 @@ nonisolated struct RecipeMetadata: Sendable, Equatable {
     var ingredients: [String]
 }
 
-/// Names the dish and cleans up the ingredient list once all steps are known.
+/// Names the dish and cleans up the ingredient list once all steps are known. `videoTitle` is
+/// the YouTube title when known: it usually names the dish.
 protocol RecipeMetadataProvider: Sendable {
-    func metadata(stepTitles: [String], ingredients: [String]) async throws -> RecipeMetadata
+    func metadata(stepTitles: [String], ingredients: [String], videoTitle: String?) async throws -> RecipeMetadata
 }
 
 /// Chunked analysis: split the transcript into windows, extract steps per window (shrinking a
 /// window and retrying when the model's context overflows), then merge, order, clamp and
 /// sanity-check the steps. Everything except the two model calls is deterministic and tested.
 struct ChunkedRecipePipeline: Sendable {
-    /// Rendered characters per window. ~750 tokens: leaves room in a 4 k context for the
-    /// instructions, the schema and up to 8 generated steps.
-    var maxWindowCharacters = 3_000
+    /// Rendered characters per window (~1,100 tokens). Leaves room in the ~4 k context for the
+    /// instructions, the schema and up to 8 generated steps; 6 k-character windows still fit.
+    var maxWindowCharacters = 4_500
     /// Lines shared by consecutive windows so a boundary step is seen whole at least once.
     var overlapLines = 2
     /// How many times a window may be halved before giving up on it.
     var maxShrinkDepth = 6
     var mergeOptions = StepMerger.Options()
+    var grounding = StepGrounding.Options()
+    /// Groups small steps into slides when there are more than `StepConsolidation.threshold`.
+    var consolidator: (any StepConsolidator)?
+    /// The video's title, passed to the metadata pass as a hint for the dish name.
+    var videoTitle: String?
     /// Called after each window finishes: (windows done, windows total).
     var progress: (@Sendable (Int, Int) -> Void)?
+    /// One line per pipeline stage, for a debug console; the same lines go to the unified log.
+    var trace: (@Sendable (String) -> Void)?
+
+    private static let log = Logger(subsystem: "com.cookalong.CookAlong", category: "recipe")
 
     init() {}
+
+    private func note(_ message: String) {
+        Self.log.info("\(message, privacy: .public)")
+        trace?(message)
+    }
 
     func run(transcript: [TranscriptLine], videoDuration: Double,
              extractor: any WindowExtractor, metadata: (any RecipeMetadataProvider)?) async throws -> Recipe {
@@ -75,6 +91,7 @@ struct ChunkedRecipePipeline: Sendable {
 
         let windows = TranscriptChunker.split(lines, maxCharacters: maxWindowCharacters,
                                               overlapLines: overlapLines, videoDuration: videoDuration)
+        note("\(lines.count) transcript lines -> \(windows.count) windows")
         var candidates: [StepCandidate] = []
         var ingredients: [String] = []
         var failures: [any Error] = []
@@ -88,26 +105,45 @@ struct ChunkedRecipePipeline: Sendable {
                     ingredients += extracted.ingredients
                 }
                 succeeded += 1
+                note("window \(done + 1)/\(windows.count) [\(Int(window.startSecond))s-\(Int(window.endSecond))s]: \(candidates.count) candidates so far")
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 // One bad window (a guardrail trip on "kill the heat", say) shouldn't sink the recipe.
                 failures.append(error)
+                note("window \(done + 1)/\(windows.count) failed: \(error.localizedDescription)")
             }
             progress?(done + 1, windows.count)
         }
         if succeeded == 0, let first = failures.first { throw first }
 
-        let merged = StepMerger.merge(candidates, options: mergeOptions)
+        let deduped = StepMerger.merge(candidates, options: mergeOptions)
+        let merged = deduped.filter { !ChatterFilter.isChatter(title: $0.title, instruction: $0.instruction) }
+        note("\(candidates.count) candidates -> \(deduped.count) after merge -> \(merged.count) after chatter filter")
         guard !merged.isEmpty else { throw RecipeAnalysisError.noStepsFound }
-        let steps = Self.finalize(merged, videoDuration: videoDuration)
+        var steps = Self.finalize(merged, videoDuration: videoDuration)
+        if let consolidator, steps.count > StepConsolidation.threshold {
+            do {
+                let plan = try await consolidator.plan(for: steps)
+                if let slides = StepConsolidation.apply(plan, to: steps) {
+                    note("consolidated \(steps.count) steps into \(slides.count) slides")
+                    steps = slides
+                } else {
+                    note("consolidation plan rejected (\(plan.slides.count) slides for \(steps.count) steps); keeping steps")
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                note("consolidation failed: \(error.localizedDescription)")
+            }
+        }
         let allIngredients = Self.dedupeIngredients(ingredients)
 
         var meta = RecipeMetadata(title: "Recipe from video", servings: 4, difficulty: Self.difficulty(for: steps),
                                   ingredients: allIngredients)
         if let metadata {
             do {
-                let m = try await metadata.metadata(stepTitles: steps.map(\.title), ingredients: allIngredients)
+                let m = try await metadata.metadata(stepTitles: steps.map(\.title), ingredients: allIngredients, videoTitle: videoTitle)
                 meta.title = m.title.isEmpty ? meta.title : m.title
                 meta.servings = (1...12).contains(m.servings) ? m.servings : meta.servings
                 meta.difficulty = ["easy", "medium", "hard"].contains(m.difficulty) ? m.difficulty : meta.difficulty
@@ -126,7 +162,11 @@ struct ChunkedRecipePipeline: Sendable {
     private func extract(_ window: TranscriptWindow, extractor: any WindowExtractor, depth: Int) async throws -> [ExtractedWindow] {
         do {
             let extracted = try await extractor.extract(window)
-            return [ExtractedWindow(steps: Self.tag(extracted.steps, with: window), ingredients: extracted.ingredients)]
+            let grounded = StepGrounding.ground(Self.tag(extracted.steps, with: window), in: window.lines, options: grounding)
+            if grounded.count < extracted.steps.count {
+                note("dropped \(extracted.steps.count - grounded.count) ungrounded step(s) in [\(Int(window.startSecond))s-\(Int(window.endSecond))s]")
+            }
+            return [ExtractedWindow(steps: grounded, ingredients: extracted.ingredients)]
         } catch RecipeAnalysisError.contextWindowExceeded {
             let halves = TranscriptChunker.halve(window)
             guard halves.count == 2, depth < maxShrinkDepth else { throw RecipeAnalysisError.contextWindowExceeded }
@@ -162,12 +202,13 @@ struct ChunkedRecipePipeline: Sendable {
             return RecipeStep(title: capitalized(s.title.trimmingCharacters(in: .whitespacesAndNewlines)),
                               instruction: s.instruction.trimmingCharacters(in: .whitespacesAndNewlines),
                               startSecond: Int(start.rounded()), minutes: minutes, isHandsOn: s.isHandsOn,
-                              needsTimer: needsTimer, tip: s.tip, imagePrompt: s.imagePrompt)
+                              needsTimer: needsTimer, tip: s.tip, imagePrompt: s.imagePrompt,
+                              vessel: Vessel(rawValue: s.vessel), items: s.items.isEmpty ? nil : s.items)
         }
     }
 
     /// "boil pasta" -> "Boil pasta". Small models are inconsistent about this.
-    static func capitalized(_ title: String) -> String {
+    nonisolated static func capitalized(_ title: String) -> String {
         guard let first = title.first else { return title }
         return first.uppercased() + title.dropFirst()
     }

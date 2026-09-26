@@ -34,7 +34,10 @@ nonisolated struct VideoMetadata: Sendable, Hashable, Codable {
 
 /// Which path produced the recipe.
 nonisolated enum RecipePath: String, Sendable, Codable {
+    /// Transcript the cook pasted, analysed on the device.
     case onDeviceTranscript
+    /// YouTube's own captions, fetched by the app and analysed on the device.
+    case onDeviceCaptions
     case geminiVideo
 }
 
@@ -64,7 +67,7 @@ protocol TranscriptRecipeExtractor {
     var isAvailable: Bool { get }
     /// Why `isAvailable` is false, for the error message.
     var unavailableReason: String? { get }
-    func recipe(from transcript: [TranscriptLine], videoDuration: Double) async throws -> Recipe
+    func recipe(from transcript: [TranscriptLine], videoDuration: Double, video: VideoMetadata?) async throws -> Recipe
 }
 
 /// Path B: a recipe from the video itself, analysed in the cloud.
@@ -78,6 +81,8 @@ nonisolated enum RecipeSourceError: LocalizedError, Equatable {
     case noVideoInLink
     case videoUnavailable
     case transcriptUnreadable
+    /// The app couldn't fetch the video's captions (no captions, private, YouTube changed).
+    case transcriptUnavailable(String)
     case nothingAvailable(hasTranscript: Bool, onDeviceReason: String?)
     case cloud(String)
 
@@ -94,6 +99,8 @@ nonisolated enum RecipeSourceError: LocalizedError, Equatable {
             "YouTube can't find that video. It may be private, removed, or the link is mistyped."
         case .transcriptUnreadable:
             "The pasted text has no timestamps, so it can't be lined up with the video. \(Self.howToCopyTranscript)"
+        case .transcriptUnavailable(let reason):
+            "Couldn't get this video's captions from YouTube (\(reason)). \(Self.howToCopyTranscript) Or add GEMINI_API_KEY to Info.plist to analyse the video in the cloud."
         case .nothingAvailable(let hasTranscript, let onDeviceReason):
             if hasTranscript, let onDeviceReason {
                 "\(onDeviceReason) So the pasted transcript can't be analysed on this device. Add GEMINI_API_KEY to Info.plist to analyse the video in the cloud instead."

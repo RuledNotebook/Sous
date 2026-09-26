@@ -31,9 +31,9 @@ let package = Package(
         .target(
             name: "CookAlong",
             path: ".",
-            exclude: ["App", "Views", "Session", "Resources", "Services/Images", "Legacy",
-                      "CookAlong.xcodeproj", "CookAlongTests", "Info.plist", "README.md", "Package.swift"],
-            sources: ["Models", "Services/Recipe"],
+            exclude: ["App", "Views", "Session", "Resources", "Legacy", "CookAlong.xcodeproj", "CookAlongTests",
+                      "Info.plist", "README.md", "Package.swift"],
+            sources: ["Models", "Services/Recipe", "Services/Images/KitchenAssets.swift"],
             swiftSettings: appSettings
         ),
         .testTarget(

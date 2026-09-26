@@ -40,6 +40,10 @@ nonisolated struct GeneratedStep {
     var tip: String
     @Guide(description: "Visual description of the finished state of this step for an image generator, no people or text")
     var imagePrompt: String
+    @Guide(description: "Where this step happens", .anyOf(["pot", "pan", "bowl", "board", "oven", "plate"]))
+    var vessel: String
+    @Guide(description: "Ingredients used in this step, as asset names from the list in the instructions only", .maximumCount(6))
+    var items: [String]
 }
 
 /// Second, tiny pass once all steps are known: name the dish and tidy the ingredient list.
@@ -59,36 +63,31 @@ nonisolated extension StepCandidate {
     init(_ g: GeneratedStep) {
         self.init(title: g.title, instruction: g.instruction, startSecond: Double(g.startSecond),
                   minutes: g.minutes, isHandsOn: g.isHandsOn, needsTimer: g.needsTimer,
-                  tip: g.tip, imagePrompt: g.imagePrompt)
+                  tip: g.tip, imagePrompt: g.imagePrompt, vessel: g.vessel, items: g.items)
     }
 }
 
 // MARK: - Prompts (shared by the on-device and cloud analyzers)
 
 nonisolated enum RecipePrompts {
-    /// Rules plus two short worked examples: one for where a step's timestamp lands, one for
-    /// kitchen minutes when the video jump-cuts. Kept terse; every token here is paid per window.
+    /// The rules, stated without worked examples: small models copy examples into their output.
+    /// Kept terse; every token here is paid per window.
     static let rules = """
-        Each transcript line starts with the second it was spoken, like [42s].
+        Each transcript line starts with the second it was spoken, like [42s]. The lines are \
+        automatic speech captions, so words can be mis-heard (a sauce name, "wok" heard as "walk"); \
+        write ingredients and steps the way a cook would spell them.
 
-        startSecond: the second the cook physically BEGINS the action, not when it is first \
-        mentioned or planned. Copy the timestamp of the line where the action starts.
-        Example:
-        [12s] First thing, we need the onions diced nice and small.
-        [20s] Actually let me get the pan heating first, medium high.
-        [31s] Okay, pan's on. Now the onion, I like a fine dice.
-        -> "Heat the pan" startSecond 20; "Dice the onion" startSecond 31 (not 12, that was just talk).
+        startSecond: copy the timestamp of the line where the cook physically BEGINS the action \
+        (the knife hits the board, the pan goes on the heat, the food goes in), never an earlier \
+        line where it is only mentioned or planned.
 
-        minutes: real kitchen time, never video time. Videos skip the waiting.
-        Example:
-        [140s] Into the oven at 200 degrees for 25 minutes.
-        [143s] And here it is out of the oven, look at that colour.
-        -> "Bake the dish" minutes 25, isHandsOn false, needsTimer true.
-        If a duration is spoken, use it. Otherwise estimate what a home cook needs \
-        (dice an onion 3 min, bring a pot to the boil 8 min).
+        minutes: real kitchen time, never video time; videos skip the waiting. Use a spoken \
+        duration when there is one, otherwise estimate what a home cook needs. isHandsOn is false \
+        while waiting; needsTimer is true for any wait of a minute or more.
 
-        Merge chatter and repeated mentions into real cooking steps. Skip intros, sponsor talk \
-        and outros. Steps stay in video order.
+        Only describe actions that happen in this transcript. Never add a step from memory or \
+        from these instructions. Merge chatter and repeated mentions into real cooking steps. \
+        Skip greetings, stories, sponsor talk and goodbyes. Keep video order.
         """
 
     static let windowInstructions = """
@@ -96,6 +95,8 @@ nonisolated enum RecipePrompts {
         \(rules)
         List only ingredients mentioned in this section, with amounts if spoken. \
         If nothing is cooked in this section, return no steps.
+        vessel is where the step happens: pot, pan, bowl, board, oven or plate. \
+        items are the ingredients used in the step, chosen only from: \(KitchenAssets.promptList.joined(separator: ", ")).
         """
 
     static func windowPrompt(_ window: TranscriptWindow, videoDuration: Double) -> String {
@@ -106,15 +107,19 @@ nonisolated enum RecipePrompts {
     }
 
     static let metadataInstructions = """
-        You are given the steps and ingredients extracted from a cooking video. \
-        Name the dish, estimate servings and difficulty, and return one clean ingredient list \
-        with duplicates merged and amounts kept.
+        You are given the steps and ingredients extracted from a cooking video, and the video's \
+        title. Name the dish in a few words (the video title usually names it; drop channel names, \
+        clickbait and "|" sections), estimate servings and difficulty, and return one clean \
+        ingredient list with duplicates merged and amounts kept. The ingredients came from automatic \
+        captions, so fix mis-heard names to real ingredients (for example "gacha jang" is gochujang) \
+        and drop entries that are dishes or mixtures rather than ingredients.
         """
 
-    static func metadataPrompt(stepTitles: [String], ingredients: [String]) -> String {
+    static func metadataPrompt(stepTitles: [String], ingredients: [String], videoTitle: String?) -> String {
         let steps = stepTitles.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
         let list = ingredients.isEmpty ? "(none mentioned)" : ingredients.joined(separator: "; ")
-        return "Steps:\n\(steps)\n\nIngredients mentioned:\n\(list)"
+        let title = videoTitle.map { "Video title: \($0)\n\n" } ?? ""
+        return "\(title)Steps:\n\(steps)\n\nIngredients mentioned:\n\(list)"
     }
 
     static let cloudInstructions = """
@@ -153,12 +158,23 @@ struct OnDeviceRecipeAnalyzer: RecipeAnalyzer {
         }
     }
 
-    var pipeline = ChunkedRecipePipeline()
+    var pipeline: ChunkedRecipePipeline = {
+        var p = ChunkedRecipePipeline()
+        p.consolidator = FoundationModelsStepConsolidator()
+        return p
+    }()
 
     func recipe(from transcript: [TranscriptLine], videoDuration: Double) async throws -> Recipe {
+        try await recipe(from: transcript, videoDuration: videoDuration, videoTitle: nil)
+    }
+
+    /// Same, with the video's title as a hint for naming the dish.
+    func recipe(from transcript: [TranscriptLine], videoDuration: Double, videoTitle: String?) async throws -> Recipe {
         guard Self.isAvailable else {
             throw RecipeAnalysisError.modelUnavailable(Self.unavailableReason ?? "unknown")
         }
+        var pipeline = self.pipeline
+        pipeline.videoTitle = videoTitle
         return try await pipeline.run(transcript: transcript, videoDuration: videoDuration,
                                       extractor: FoundationModelsWindowExtractor(videoDuration: videoDuration),
                                       metadata: FoundationModelsMetadataProvider())
@@ -182,13 +198,50 @@ struct FoundationModelsWindowExtractor: WindowExtractor {
 }
 
 struct FoundationModelsMetadataProvider: RecipeMetadataProvider {
-    func metadata(stepTitles: [String], ingredients: [String]) async throws -> RecipeMetadata {
+    func metadata(stepTitles: [String], ingredients: [String], videoTitle: String?) async throws -> RecipeMetadata {
         let session = LanguageModelSession(instructions: RecipePrompts.metadataInstructions)
-        let prompt = RecipePrompts.metadataPrompt(stepTitles: stepTitles, ingredients: ingredients)
+        let prompt = RecipePrompts.metadataPrompt(stepTitles: stepTitles, ingredients: ingredients, videoTitle: videoTitle)
         do {
             let g = try await session.respond(to: prompt, generating: GeneratedRecipeMeta.self,
                                               options: GenerationOptions(samplingMode: .greedy)).content
             return RecipeMetadata(title: g.title, servings: g.servings, difficulty: g.difficulty, ingredients: g.ingredients)
+        } catch {
+            throw FoundationModelsErrors.translate(error)
+        }
+    }
+}
+
+/// Third pass: groups the small extracted steps into slides. Titles come from the model,
+/// everything else (times, minutes, timers) is combined deterministically.
+@Generable
+nonisolated struct GeneratedSlidePlan {
+    @Guide(description: "Slides in order. Every step number appears in exactly one slide, and a slide's numbers are consecutive.", .maximumCount(16))
+    var slides: [GeneratedSlide]
+}
+
+@Generable
+nonisolated struct GeneratedSlide {
+    @Guide(description: "2 to 5 word title starting with a verb")
+    var title: String
+    @Guide(description: "The step numbers this slide covers, ascending and consecutive, e.g. 4, 5, 6", .minimumCount(1))
+    var stepNumbers: [Int]
+}
+
+struct FoundationModelsStepConsolidator: StepConsolidator {
+    static let instructions = """
+        You turn a long list of small cooking steps into the slides a home cook follows while \
+        cooking. Combine consecutive steps that are one action or happen together in the same pan \
+        or bowl (several seasonings, several toppings). Keep a real wait (boiling, baking, resting) \
+        as its own slide. Never reorder, skip or invent steps: every step number appears once, in order.
+        """
+
+    func plan(for steps: [RecipeStep]) async throws -> SlidePlan {
+        let session = LanguageModelSession(instructions: Self.instructions)
+        let prompt = "Group these \(steps.count) steps into about \(StepConsolidation.targetCount(for: steps.count)) slides.\n" + StepConsolidation.listing(steps)
+        do {
+            let g = try await session.respond(to: prompt, generating: GeneratedSlidePlan.self,
+                                              options: GenerationOptions(samplingMode: .greedy)).content
+            return SlidePlan(slides: g.slides.map { SlidePlan.Slide(title: $0.title, stepIndices: $0.stepNumbers.map { $0 - 1 }) })
         } catch {
             throw FoundationModelsErrors.translate(error)
         }

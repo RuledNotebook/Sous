@@ -4,12 +4,13 @@ import Foundation
 /// narration (`OnDeviceRecipeAnalyzer`): windows sized for the small context, steps per window,
 /// merge, dedupe, clamp. The transcript's own timestamps drive `startSecond`.
 struct OnDeviceTranscriptExtractor: TranscriptRecipeExtractor {
-    var analyzer: any RecipeAnalyzer = OnDeviceRecipeAnalyzer()
+    var analyzer = OnDeviceRecipeAnalyzer()
 
     var isAvailable: Bool { OnDeviceRecipeAnalyzer.isAvailable }
     var unavailableReason: String? { OnDeviceRecipeAnalyzer.unavailableReason }
 
-    func recipe(from transcript: [TranscriptLine], videoDuration: Double) async throws -> Recipe {
-        try await analyzer.recipe(from: transcript, videoDuration: videoDuration)
+    func recipe(from transcript: [TranscriptLine], videoDuration: Double, video: VideoMetadata?) async throws -> Recipe {
+        let title = video.map { $0.title == "YouTube video" ? nil : $0.title } ?? nil
+        return try await analyzer.recipe(from: transcript, videoDuration: videoDuration, videoTitle: title)
     }
 }
