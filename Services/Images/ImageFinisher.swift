@@ -1,19 +1,21 @@
 import CoreGraphics
 import Foundation
 
-/// Gives every step picture the same framing, whether it came out of the video or an image model:
-/// centre-cropped to the step card's aspect ratio and downscaled to a size the card can't tell apart.
+/// Gives every step picture the same treatment: an optional centre crop to a fixed aspect ratio and a
+/// downscale to a size the slide can't tell apart from the original.
 nonisolated enum ImageFinisher {
     nonisolated struct Options: Sendable {
-        /// The step card in `AIPanelView` is 16:10.
-        var aspectRatio: CGFloat = 16.0 / 10.0
+        /// nil keeps the picture's own shape. The step slide fills a panel whose shape changes with the
+        /// fold pose, so AI pictures are left uncropped and roughly square.
+        var aspectRatio: CGFloat?
         var maxWidth = 1024
 
-        static let card = Options()
+        static let slide = Options(aspectRatio: nil)
+        static let card = Options(aspectRatio: 16.0 / 10.0)
     }
 
-    static func finish(_ image: CGImage, options: Options = .card) -> CGImage {
-        let cropped = centerCrop(image, aspectRatio: options.aspectRatio) ?? image
+    static func finish(_ image: CGImage, options: Options = .slide) -> CGImage {
+        let cropped = options.aspectRatio.flatMap { centerCrop(image, aspectRatio: $0) } ?? image
         return resized(cropped, maxWidth: options.maxWidth) ?? cropped
     }
 
