@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Understands your voice commands, like "next" and "start timer", while you cook.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Hears voice commands like "next", "back" and "start timer" so you can cook with messy hands.</string>
+	<!--
+	Optional keys the service sessions may read with Bundle.main.infoDictionary.
+	Hackathon only: never ship a key inside an app.
+
+	<key>ANTHROPIC_API_KEY</key>
+	<string></string>
+	<key>IMAGE_API_URL</key>
+	<string></string>
+	<key>IMAGE_API_KEY</key>
+	<string></string>
+	<key>IMAGE_API_MODEL</key>
+	<string></string>
+	-->
+</dict>
+</plist>
