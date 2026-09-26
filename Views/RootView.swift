@@ -7,14 +7,15 @@ import SwiftUI
 ///  ┌───────────────┐                                      ┌─────────────┬─────────────┐
 ///  │  video (16:9) │                                      │ video (16:9)│             │
 ///  ├───────────────┤                                      ├─────────────┤  slideshow  │
-///  │   slideshow   │                                      │   details   │             │
-///  ├───────────────┤                                      │  (scrolls)  │             │
-///  │    details    │                                      └────────── hinge ──────────┘
+///  │   slideshow   │                                      │  cook bar   │             │
+///  │  (the rest)   │                                      │             │             │
+///  ├───────────────┤                                      └────────── hinge ──────────┘
+///  │   cook bar    │
 ///  └───────────────┘
 ///
 /// The video sits on top, full width, and follows the slides. Wide containers still split
 /// 50/50 on the physical centre line so the seam lands on the hinge; tall ones give the
-/// slideshow the room it needs and let the details scroll in what is left.
+/// slideshow everything the video and the compact cook bar leave.
 struct RootView: View {
     var body: some View {
         GeometryReader { geo in
@@ -36,10 +37,10 @@ struct RootView: View {
                     VStack(spacing: 0) {
                         VideoPanelView()
                         SlideshowView()
-                            .frame(height: plan.slideshowHeight)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .overlay(alignment: .bottom) { Seam(.horizontal) }
                         DetailsPanelView()
-                            .frame(maxHeight: .infinity)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
