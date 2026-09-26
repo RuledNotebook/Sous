@@ -137,7 +137,7 @@ struct InputFormView: View {
     /// Whatever the bundle is called, so a rename in the project shows up here too.
     private static var appName: String {
         let info = Bundle.main.infoDictionary ?? [:]
-        return (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? "CookAlong"
+        return (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? "Sous"
     }
 
     private var wordCount: Int {

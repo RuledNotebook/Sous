@@ -162,7 +162,7 @@ struct YouTubePlayerView: UIViewRepresentable {
         }
     }
 
-    static let origin = "https://cookalong.app"
+    static let origin = "https://sous.app"
 
     /// The player page. `cook(cmd)` queues until the player is ready; a small timer pauses at `stopAt`.
     /// Player state changes are posted back as numbers (see `VideoController.playerReported`).

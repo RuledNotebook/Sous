@@ -1,4 +1,4 @@
-# CookAlong — Bitrig Hacks
+# Sous — Bitrig Hacks
 
 Paste a YouTube cooking video to get a recipe with an ingredient checklist, illustrated
 steps, a video panel that follows the current step, kitchen timers, optional read-aloud, and voice

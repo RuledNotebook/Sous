@@ -110,6 +110,6 @@ extension Recipe {
         ],
         sourceURL: YouTubeLink.watchURL(for: demoVideoID),
         thumbnailURL: YouTubeLink.thumbnailURL(for: demoVideoID),
-        channel: "CookAlong demo"
+        channel: "Sous demo"
     )
 }
