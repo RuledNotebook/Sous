@@ -133,6 +133,10 @@ final class CookSession {
     private func clear() {
         imageTask?.cancel(); imageTask = nil
         priorityImageTask?.cancel(); priorityImageTask = nil
+        voiceTask?.cancel(); voiceTask = nil
+        voice.stopListening()
+        voiceEnabled = false
+        if let timer { TimerNotifications.shared.cancel(stepID: timer.stepID) }
         requestedImages = []
         speaker.stopSpeaking()
         recipe = nil

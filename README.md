@@ -14,9 +14,18 @@ YouTube link (+ pasted transcript) ──► RecipeSource ──► Recipe { ste
 ## Layout
 
 `Views/RootView.swift` sizes everything from its container, never `UIScreen`.
-Tall containers (closed, or open and rotated) stack the details panel over the slideshow;
-wide ones (open) put them side by side. Both split 50/50 on the physical centre line so
-the hinge falls between the panels.
+On the Duo's closed display, one scrollable cooking panel uses the full screen and keeps
+slide, voice and read-aloud controls above the home indicator. A native menu jumps to any
+step. On the inner display, the details panel and slideshow split at the physical centre
+line: side by side when wide, stacked when rotated. The layout breakpoint is the shorter
+container dimension reaching 600 points; it should be revisited if Apple exposes a
+posture-specific layout API.
+
+The app follows the system's Light/Dark Mode, safe areas, controls and SF Pro Dynamic Type.
+System background and secondary background colors form the surfaces. The light accent is
+deep basil `#26633D`, the dark accent is mint `#8FD19E`; prominent fills stay dark green
+for white-label contrast. Amber is reserved for the active timer. There is no app-specific
+appearance setting.
 
 ## Who owns what
 

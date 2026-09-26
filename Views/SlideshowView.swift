@@ -137,7 +137,7 @@ private struct OverviewSlide: View {
     }
 }
 
-private struct IngredientRow: View {
+struct IngredientRow: View {
     let text: String
     let checked: Bool
     let toggle: () -> Void
@@ -147,14 +147,14 @@ private struct IngredientRow: View {
             HStack(spacing: 10) {
                 Image(systemName: checked ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(checked ? Theme.basil : .secondary)
+                    .foregroundStyle(checked ? Theme.accent : .secondary)
                 Text(text)
                     .strikethrough(checked)
                     .foregroundStyle(checked ? .secondary : .primary)
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 6)
+            .frame(minHeight: 48)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -173,39 +173,46 @@ private struct StepSlide: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            // The picture goes in an overlay so a fill-mode image never changes the slide's size.
-            Rectangle()
-                .fill(Theme.castIron)
-                .overlay {
-                    if let image {
+            if let image {
+                // The picture goes in an overlay so fill mode never changes the slide's size.
+                Rectangle()
+                    .fill(Theme.castIron)
+                    .overlay {
                         Image(uiImage: image).resizable().scaledToFill()
-                            .transition(.opacity)
-                    } else {
-                        Image(systemName: symbol)
-                            .font(.system(size: 64, weight: .light))
-                            .foregroundStyle(Theme.basil)
                     }
+                    .clipped()
+                LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
+                heading(color: .white)
+                    .padding(16)
+            } else {
+                Theme.card
+                VStack(alignment: .leading) {
+                    Spacer(minLength: 0)
+                    Image(systemName: symbol)
+                        .font(.system(size: 56, weight: .light))
+                        .foregroundStyle(Theme.accent)
+                        .frame(maxWidth: .infinity)
+                    Spacer(minLength: 0)
+                    heading(color: .primary)
                 }
-                .clipped()
-                .animation(.easeInOut, value: image != nil)
-
-            LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Step \(index + 1) of \(count)")
-                    .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(.white.opacity(0.85))
-                Text(step.title)
-                    .font(.title.weight(.bold))
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
+                .padding(16)
             }
-            .padding(16)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Step \(index + 1) of \(count), \(step.title)")
+    }
+
+    private func heading(color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Step \(index + 1) of \(count)")
+                .font(.caption.weight(.semibold))
+                .textCase(.uppercase)
+            Text(step.title)
+                .font(.title.weight(.bold))
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(color)
     }
 
     private var symbol: String {
@@ -228,7 +235,7 @@ private struct DoneSlide: View {
         VStack(spacing: 12) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 56))
-                .foregroundStyle(Theme.basil)
+                .foregroundStyle(Theme.accent)
             Text("All done").font(.title2.weight(.bold))
             Text("Enjoy your \(recipe.title.lowercased()).")
                 .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -248,6 +255,7 @@ private struct DoneSlide: View {
             .buttonStyle(.bordered)
         Button("New recipe") { session.reset() }
             .buttonStyle(.borderedProminent)
+            .tint(Theme.actionFill)
     }
 }
 
@@ -257,13 +265,13 @@ private struct Thumbnail: View {
 
     var body: some View {
         Rectangle()
-            .fill(Theme.basil.opacity(0.12))
+            .fill(Theme.accent.opacity(0.12))
             .overlay {
                 AsyncImage(url: url) { phase in
                     if let image = phase.image {
                         image.resizable().scaledToFill()
                     } else {
-                        Image(systemName: "photo").foregroundStyle(Theme.basil)
+                        Image(systemName: "photo").foregroundStyle(Theme.accent)
                     }
                 }
             }
@@ -279,7 +287,7 @@ private struct StatusSlide: View {
     var body: some View {
         VStack(spacing: 12) {
             if busy { ProgressView().controlSize(.large) }
-            else { Image(systemName: symbol).font(.system(size: 44, weight: .light)).foregroundStyle(Theme.basil) }
+            else { Image(systemName: symbol).font(.system(size: 44, weight: .light)).foregroundStyle(Theme.accent) }
             Text(title).font(.headline)
             Text(detail).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
@@ -292,8 +300,10 @@ private struct StatusSlide: View {
 
 // MARK: - Controls under the slides
 
-private struct SlideshowBar: View {
+struct SlideshowBar: View {
     @Environment(CookSession.self) private var session
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    var compact = false
 
     var body: some View {
         @Bindable var session = session
@@ -301,42 +311,71 @@ private struct SlideshowBar: View {
             HStack(spacing: 10) {
                 Button { session.previous() } label: { Image(systemName: "chevron.left") }
                     .buttonStyle(.bordered)
+                    .frame(minWidth: 44, minHeight: 44)
                     .disabled(!session.canGoBack)
                     .accessibilityLabel("Previous slide")
 
                 Spacer(minLength: 0)
 
-                Toggle(isOn: Binding(get: { session.voiceEnabled }, set: { session.setVoice(enabled: $0) })) {
-                    Label("Listen", systemImage: session.voice.status.isListening ? "mic.fill" : "mic")
+                if compact && dynamicTypeSize.isAccessibilitySize {
+                    voiceToggle.labelStyle(.iconOnly)
+                } else {
+                    voiceToggle
                 }
-                .toggleStyle(.button)
-                .tint(session.voice.status.isListening ? .red : Theme.basil)
-                .accessibilityLabel("Voice control")
 
                 Toggle(isOn: $session.readAloud) {
                     Label("Read aloud", systemImage: session.readAloud ? "speaker.wave.2.fill" : "speaker.slash")
                 }
                 .toggleStyle(.button)
                 .labelStyle(.iconOnly)
+                .frame(minWidth: 44, minHeight: 44)
                 .accessibilityLabel("Read each slide aloud")
 
                 Spacer(minLength: 0)
 
                 Button { session.next() } label: { Image(systemName: "chevron.right") }
                     .buttonStyle(.borderedProminent)
+                    .tint(Theme.actionFill)
+                    .frame(minWidth: 44, minHeight: 44)
                     .disabled(!session.canGoForward)
                     .accessibilityLabel("Next slide")
             }
             .font(.subheadline)
 
             HStack(spacing: 8) {
-                Text(position).monospacedDigit()
-                Spacer(minLength: 8)
-                VoiceStatusBar()
+                if compact {
+                    Menu {
+                        Button("Ingredients") { session.go(to: .overview) }
+                        ForEach(Array(session.steps.enumerated()), id: \.element.id) { index, step in
+                            Button("Step \(index + 1): \(step.title)") { session.goToStep(index) }
+                        }
+                        Button("Done") { session.go(to: .done) }
+                    } label: {
+                        Label(position, systemImage: "list.number")
+                            .monospacedDigit()
+                    }
+                    .accessibilityLabel("Jump to a slide, currently \(position)")
+                } else {
+                    Text(position).monospacedDigit()
+                }
+                if !compact || session.voiceEnabled {
+                    Spacer(minLength: 8)
+                    VoiceStatusBar()
+                }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
         }
+    }
+
+    private var voiceToggle: some View {
+        Toggle(isOn: Binding(get: { session.voiceEnabled }, set: { session.setVoice(enabled: $0) })) {
+            Label("Listen", systemImage: session.voice.status.isListening ? "mic.fill" : "mic")
+        }
+        .toggleStyle(.button)
+        .tint(session.voice.status.isListening ? .red : Theme.accent)
+        .frame(minWidth: 44, minHeight: 44)
+        .accessibilityLabel("Voice control")
     }
 
     private var position: String {

@@ -4,10 +4,11 @@ import SwiftUI
 /// then stats, the current step's words, the timer, and the step strip.
 struct DetailsPanelView: View {
     @Environment(CookSession.self) private var session
+    var compact = false
 
     var body: some View {
         if session.phase == .ready, let recipe = session.recipe {
-            RecipeDetails(recipe: recipe)
+            RecipeDetails(recipe: recipe, compact: compact)
         } else {
             InputFormView()
         }
@@ -17,36 +18,50 @@ struct DetailsPanelView: View {
 private struct RecipeDetails: View {
     @Environment(CookSession.self) private var session
     let recipe: Recipe
+    let compact: Bool
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(recipe.title)
-                        .font(.title2.weight(.bold))
-                        .accessibilityAddTraits(.isHeader)
-                    if let channel = recipe.channel {
-                        Text(channel).font(.subheadline).foregroundStyle(.secondary)
+                if !compact || session.slide == .overview {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(recipe.title)
+                            .font(.title2.weight(.bold))
+                            .accessibilityAddTraits(.isHeader)
+                        if let channel = recipe.channel {
+                            Text(channel).font(.subheadline).foregroundStyle(.secondary)
+                        }
                     }
                 }
 
-                StatsRow(recipe: recipe, minutesLeft: session.minutesLeft)
+                if compact, session.slide != .done {
+                    Text(session.slide == .overview
+                         ? "\(recipe.totalMinutes.cookTime) total · Serves \(recipe.servings)"
+                         : "\(session.minutesLeft.cookTime) left")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else if !compact {
+                    StatsRow(recipe: recipe, minutesLeft: session.minutesLeft)
+                }
 
                 switch session.slide {
                 case .overview:
-                    OverviewDetails(recipe: recipe)
+                    OverviewDetails(recipe: recipe, compact: compact)
                 case .step(let index):
                     if recipe.steps.indices.contains(index) {
-                        StepDetails(recipe: recipe, step: recipe.steps[index], index: index, count: recipe.steps.count)
+                        StepDetails(recipe: recipe, step: recipe.steps[index], index: index, count: recipe.steps.count, compact: compact)
                     }
                 case .done:
-                    DoneDetails(recipe: recipe)
+                    DoneDetails(recipe: recipe, compact: compact)
                 }
 
-                StepStrip(steps: recipe.steps, current: session.currentStepIndex, done: session.slide == .done)
+                if !compact {
+                    StepStrip(steps: recipe.steps, current: session.currentStepIndex, done: session.slide == .done)
+                }
             }
             .padding()
         }
+        .id(session.slide)
     }
 }
 
@@ -101,14 +116,22 @@ private struct StatsRow: View {
 private struct OverviewDetails: View {
     @Environment(CookSession.self) private var session
     let recipe: Recipe
+    let compact: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Gather the ingredients").font(.title3.weight(.semibold))
             Text(session.allIngredientsChecked
                  ? "Everything's out. Swipe to the first step when you're ready."
-                 : "Tick them off on the slide as you set them out. \(session.checkedIngredients.count) of \(recipe.ingredients.count) so far.")
+                 : "Tick them off as you set them out. \(session.checkedIngredients.count) of \(recipe.ingredients.count) so far.")
                 .font(.body)
+            if compact {
+                ForEach(Array(recipe.ingredients.enumerated()), id: \.offset) { index, ingredient in
+                    IngredientRow(text: ingredient, checked: session.checkedIngredients.contains(index)) {
+                        session.toggleIngredient(index)
+                    }
+                }
+            }
             if let url = recipe.sourceURL {
                 Link(destination: url) { Label("Open the video", systemImage: "play.rectangle") }
                     .font(.subheadline)
@@ -126,9 +149,22 @@ private struct StepDetails: View {
     let step: RecipeStep
     let index: Int
     let count: Int
+    let compact: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if compact, let image = session.stepImages[step.id] {
+                GeometryReader { geo in
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
+                }
+                .frame(height: 180)
+                .clipShape(.rect(cornerRadius: 12))
+                .accessibilityHidden(true)
+            }
             ViewThatFits(in: .horizontal) {
                 HStack {
                     Text("Step \(index + 1) of \(count)")
@@ -147,7 +183,7 @@ private struct StepDetails: View {
 
             Text(step.title).font(.title3.weight(.semibold))
                 .accessibilityAddTraits(.isHeader)
-            Text(step.instruction).font(.body)
+            Text(step.instruction).font(compact ? .title3 : .body)
 
             if !step.tip.isEmpty {
                 Label(step.tip, systemImage: "lightbulb")
@@ -161,7 +197,7 @@ private struct StepDetails: View {
             } else if step.needsTimer {
                 Button { session.startTimer() } label: {
                     Label("Start \(step.minutes) min timer", systemImage: "timer")
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 48)
                 }
                 .buttonStyle(.bordered)
                 .accessibilityLabel("Start \(step.minutes) minute timer")
@@ -172,6 +208,7 @@ private struct StepDetails: View {
                     Label("Watch this part", systemImage: "play.rectangle")
                 }
                 .font(.subheadline)
+                .frame(minHeight: 44, alignment: .leading)
                 .accessibilityHint("Opens YouTube at \(step.startSecond.clock)")
                 Text("Opens YouTube at \(step.startSecond.clock)")
                     .font(.caption2).foregroundStyle(.tertiary)
@@ -185,13 +222,26 @@ private struct StepDetails: View {
 }
 
 private struct DoneDetails: View {
+    @Environment(CookSession.self) private var session
     let recipe: Recipe
+    let compact: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("That's the lot").font(.title3.weight(.semibold))
+            if compact {
+                Text("Enjoy your \(recipe.title).")
+                    .font(.body)
+            }
             Text("\(recipe.steps.count) steps, about \(recipe.totalMinutes.cookTime) all in, \(recipe.handsOnMinutes.cookTime) of it hands-on.")
                 .font(.body)
+            if compact {
+                Button("Back to ingredients") { session.go(to: .overview) }
+                    .buttonStyle(.bordered)
+                Button("New recipe") { session.reset() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.actionFill)
+            }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -217,7 +267,7 @@ private struct StepStrip: View {
                                 Text("\(index + 1)")
                                     .font(.callout.weight(.bold))
                                     .frame(width: 34, height: 34)
-                                    .background(reached ? Theme.basil : Theme.card, in: .circle)
+                                    .background(reached ? Theme.actionFill : Theme.card, in: .circle)
                                     .foregroundStyle(reached ? .white : .primary)
                                 Text(step.title)
                                     .font(.caption2)
