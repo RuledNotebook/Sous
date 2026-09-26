@@ -84,9 +84,10 @@ builds watch/thumbnail URLs.
 
 On the Mac, check out `design/duo-kitchen-ui`, then choose **File → Open Folder…** in
 Bitrig and select this repository folder. Bitrig detects the `CookAlong` Xcode project
-and builds it for its built-in simulator. Select **iPhone Duo** and use the **Fold**
-controls to try closed and open poses; rotate the simulator to check the landscape
-layout. The **Demo** button is the quickest check and needs no keys. After this branch
+and builds it for its built-in simulator. Use the **Fold** controls to try closed and
+open poses, and rotate the simulator to check the landscape layout. For a separate
+Xcode Simulator run, choose **Run on… → iPhone Duo → Play** from Bitrig's toolbar.
+The **Demo** button is the quickest in-app check and needs no keys. After this branch
 has been pushed to a repository you can access, **File → Add GitHub Repository…** is
 another way to import it.
 
