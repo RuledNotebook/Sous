@@ -8,7 +8,8 @@
 //
 //     swift test
 //
-// Only Models/ and Services/Recipe/ are compiled here; the UIKit-facing folders are left out.
+// Models/, Services/Recipe/, and the Foundation-only image keys compile here; UIKit image
+// generation and the app-facing folders are left out.
 import PackageDescription
 
 let appSettings: [SwiftSetting] = [
@@ -32,7 +33,12 @@ let package = Package(
             name: "CookAlong",
             path: ".",
             exclude: ["App", "Views", "Session", "Resources", "Legacy", "CookAlong.xcodeproj", "CookAlongTests",
-                      "Info.plist", "README.md", "Package.swift"],
+                      "Config", "Info.plist", "README.md", "Package.swift",
+                      "Services/Images/StepImageProvider.swift", "Services/Images/ImageFinisher.swift",
+                      "Services/Images/ImageGenerationAPI.swift", "Services/Images/StepImageService.swift",
+                      "Services/Images/RemoteImageProvider.swift", "Services/Images/OpenAIImagesAPI.swift",
+                      "Services/Images/StepImageCache.swift", "Services/Images/PriorityGate.swift",
+                      "Services/Images/GeminiImageAPI.swift", "Services/Images/SceneArt.swift"],
             sources: ["Models", "Services/Recipe", "Services/Images/KitchenAssets.swift", "Services/Images/SceneArtKey.swift"],
             swiftSettings: appSettings
         ),

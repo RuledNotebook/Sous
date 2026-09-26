@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Scenes drawn from the bundled Kitchen art (Microsoft Fluent Emoji, MIT). No image generation.
+// Bundled Kitchen art (Microsoft Fluent Emoji, MIT), with optional cached scene backgrounds.
 
 /// One designed set: every bowl, vessel and gap uses these numbers.
 enum KitchenStyle {
@@ -297,7 +297,7 @@ struct IngredientBowlGrid: View {
                                 if isChecked {
                                     Image(systemName: "checkmark.circle.fill")
                                         .font(.title3)
-                                        .foregroundStyle(.white, Theme.basil)
+                                        .foregroundStyle(.white, Theme.actionFill)
                                 }
                             }
                         Text(ingredient)

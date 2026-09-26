@@ -1,92 +1,209 @@
 import SwiftUI
 
-/// Bottom (tall) or left-under-the-video (wide) panel: the input form until there's a recipe,
-/// then a compact cook bar with only what the cook needs in hand: the step's ingredients with
-/// their amounts (tap to tick off), the timer, and a replay of this step's part of the video.
-/// The recipe's words live on the slides and in the video; nothing is repeated here.
+/// Top (tall) or left (wide) panel: the input form until there's a recipe,
+/// then stats, the current step's words, the timer, and the step strip.
 struct DetailsPanelView: View {
     @Environment(CookSession.self) private var session
+    var compact = false
 
     var body: some View {
         if session.phase == .ready, let recipe = session.recipe {
-            CookBar(recipe: recipe)
+            RecipeDetails(recipe: recipe, compact: compact)
         } else {
             InputFormView()
         }
     }
 }
 
-private struct CookBar: View {
+private struct RecipeDetails: View {
     @Environment(CookSession.self) private var session
     let recipe: Recipe
+    let compact: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            switch session.slide {
-            case .overview:
-                OverviewBar(recipe: recipe)
-            case .step(let index):
-                if recipe.steps.indices.contains(index) {
-                    StepBar(recipe: recipe, step: recipe.steps[index], index: index, count: recipe.steps.count)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if !compact || session.slide == .overview {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(recipe.title)
+                            .font(.title2.weight(.bold))
+                            .accessibilityAddTraits(.isHeader)
+                        if let channel = recipe.channel {
+                            Text(channel).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
                 }
-            case .done:
-                DoneBar(recipe: recipe)
+
+                if compact, session.slide != .done {
+                    Text(session.slide == .overview
+                         ? "\(recipe.totalMinutes.cookTime) total · Serves \(recipe.servings)"
+                         : "\(session.minutesLeft.cookTime) left")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else if !compact {
+                    StatsRow(recipe: recipe, minutesLeft: session.minutesLeft)
+                }
+
+                switch session.slide {
+                case .overview:
+                    OverviewDetails(recipe: recipe, compact: compact)
+                case .step(let index):
+                    if recipe.steps.indices.contains(index) {
+                        StepDetails(recipe: recipe, step: recipe.steps[index], index: index, count: recipe.steps.count, compact: compact)
+                    }
+                case .done:
+                    DoneDetails(recipe: recipe, compact: compact)
+                }
+
+                if !compact {
+                    StepStrip(steps: recipe.steps, current: session.currentStepIndex, done: session.slide == .done)
+                }
             }
+            .padding()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(.snappy, value: session.slide)
+        .id(session.slide)
     }
 }
 
-// MARK: - Ingredients slide
-
-private struct OverviewBar: View {
-    @Environment(CookSession.self) private var session
+private struct StatsRow: View {
     let recipe: Recipe
+    let minutesLeft: Int
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(session.checkedIngredients.count) of \(recipe.ingredients.count) out")
-                    .font(.headline).monospacedDigit()
-                Text("Serves \(recipe.servings) · \(recipe.totalMinutes.cookTime), \(recipe.handsOnMinutes.cookTime) hands-on")
-                    .font(.caption).foregroundStyle(.secondary)
+        // One row when the numbers fit; a 2x2 grid once type gets large.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { stats }
+            Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+                GridRow {
+                    Stat(value: recipe.totalMinutes.cookTime, label: "Total")
+                    Stat(value: recipe.handsOnMinutes.cookTime, label: "Hands-on")
+                }
+                GridRow {
+                    Stat(value: minutesLeft.cookTime, label: "Left")
+                    Stat(value: "\(recipe.servings)", label: "Serves")
+                }
             }
-            Spacer(minLength: 8)
-            Button { session.next() } label: {
-                Label("Start", systemImage: "play.fill")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Recipe stats")
+    }
+
+    @ViewBuilder private var stats: some View {
+        Stat(value: recipe.totalMinutes.cookTime, label: "Total")
+        Stat(value: recipe.handsOnMinutes.cookTime, label: "Hands-on")
+        Stat(value: minutesLeft.cookTime, label: "Left")
+        Stat(value: "\(recipe.servings)", label: "Serves")
+    }
+
+    private struct Stat: View {
+        let value: String, label: String
+        var body: some View {
+            VStack(spacing: 2) {
+                Text(value).font(.subheadline.weight(.semibold)).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Text(label).font(.caption2).foregroundStyle(.secondary)
             }
-            .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Start with step 1")
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+            .background(Theme.card, in: .rect(cornerRadius: 10))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(label): \(value)")
         }
     }
 }
 
-// MARK: - Step slide
+private struct OverviewDetails: View {
+    @Environment(CookSession.self) private var session
+    let recipe: Recipe
+    let compact: Bool
 
-private struct StepBar: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Gather the ingredients").font(.title3.weight(.semibold))
+            Text(session.allIngredientsChecked
+                 ? "Everything's out. Swipe to the first step when you're ready."
+                 : "Tick them off as you set them out. \(session.checkedIngredients.count) of \(recipe.ingredients.count) so far.")
+                .font(.body)
+            if compact {
+                ForEach(Array(recipe.ingredients.enumerated()), id: \.offset) { index, ingredient in
+                    IngredientRow(text: ingredient, checked: session.checkedIngredients.contains(index)) {
+                        session.toggleIngredient(index)
+                    }
+                }
+            }
+            if let url = recipe.sourceURL {
+                Link(destination: url) { Label("Open the video", systemImage: "play.rectangle") }
+                    .font(.subheadline)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card, in: .rect(cornerRadius: 18))
+    }
+}
+
+private struct StepDetails: View {
     @Environment(CookSession.self) private var session
     let recipe: Recipe
     let step: RecipeStep
     let index: Int
     let count: Int
-    /// Ticks for needs that aren't one of the recipe's ingredient lines (a splash of water, say).
+    let compact: Bool
     @State private var localTicks: Set<String> = []
 
     var body: some View {
-        let needs = StepNeeds.needs(for: step)
-        VStack(alignment: .leading, spacing: 10) {
-            if needs.isEmpty {
-                Text("Nothing to get out for this step.")
-                    .font(.subheadline).foregroundStyle(.secondary)
-            } else {
+        VStack(alignment: .leading, spacing: 12) {
+            if compact, let image = session.stepImages[step.id] {
+                GeometryReader { geo in
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
+                }
+                .frame(height: 180)
+                .clipShape(.rect(cornerRadius: 12))
+                .accessibilityHidden(true)
+            }
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Text("Step \(index + 1) of \(count)")
+                    Spacer()
+                    Label(step.minutes.cookTime, systemImage: step.isHandsOn ? "hand.raised" : "hourglass")
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Step \(index + 1) of \(count)")
+                    Label(step.minutes.cookTime, systemImage: step.isHandsOn ? "hand.raised" : "hourglass")
+                }
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Step \(index + 1) of \(count), \(step.minutes.cookTime), \(step.isHandsOn ? "hands-on" : "waiting")")
+
+            Text(step.title).font(.title3.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            Text(step.instruction).font(compact ? .title3 : .body)
+
+            if !step.tip.isEmpty {
+                Label(step.tip, systemImage: "lightbulb")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Tip: \(step.tip)")
+            }
+
+            let needs = StepNeeds.needs(for: step)
+            if !needs.isEmpty {
+                Text("What you need")
+                    .font(.subheadline.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
                         ForEach(Array(needs.enumerated()), id: \.offset) { _, need in
                             let ingredientIndex = ingredientIndex(for: need)
-                            let ticked = ingredientIndex.map { session.checkedIngredients.contains($0) } ?? localTicks.contains(key(need))
+                            let ticked = ingredientIndex.map { session.checkedIngredients.contains($0) }
+                                ?? localTicks.contains(key(need))
                             NeedChip(need: need, ticked: ticked) {
                                 if let ingredientIndex {
                                     session.toggleIngredient(ingredientIndex)
@@ -104,55 +221,51 @@ private struct StepBar: View {
                 .accessibilityLabel("What you need for this step")
             }
 
-            HStack(spacing: 10) {
-                if let timer = session.timer {
-                    StepTimerView(timer: timer)
-                        .layoutPriority(1)
-                } else if step.needsTimer {
-                    timerButton.buttonStyle(.borderedProminent)
-                } else {
-                    timerButton.buttonStyle(.bordered)
+            if let timer = session.timer {
+                StepTimerView(timer: timer)
+            } else if step.needsTimer {
+                Button { session.startTimer() } label: {
+                    Label("Start \(step.minutes) min timer", systemImage: "timer")
+                        .frame(maxWidth: .infinity, minHeight: 48)
                 }
-
-                if recipe.videoID != nil {
-                    Button { session.repeatStep() } label: {
-                        Label("Watch", systemImage: "arrow.counterclockwise.circle")
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityLabel("Play this step's part of the video again")
-                }
-
-                Spacer(minLength: 0)
-
-                Label("\(index + 1)/\(count)", systemImage: step.isHandsOn ? "hand.raised" : "hourglass")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .accessibilityLabel("Step \(index + 1) of \(count), \(step.isHandsOn ? "hands-on" : "waiting")")
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Start \(step.minutes) minute timer")
             }
-            .font(.subheadline)
-        }
-    }
 
-    private var timerButton: some View {
-        Button { session.startTimer() } label: {
-            Label("\(step.minutes) min", systemImage: "timer")
+            if !compact, recipe.videoID != nil {
+                Button { session.repeatStep() } label: {
+                    Label("Replay this part", systemImage: "arrow.counterclockwise.circle")
+                }
+                .frame(minHeight: 44, alignment: .leading)
+                .accessibilityLabel("Play this step's part of the video again")
+            } else if let url = recipe.watchURL(for: step) {
+                Link(destination: url) {
+                    Label("Watch this part", systemImage: "play.rectangle")
+                }
+                .font(.subheadline)
+                .frame(minHeight: 44, alignment: .leading)
+                .accessibilityHint("Opens YouTube at \(step.startSecond.clock)")
+                Text("Opens YouTube at \(step.startSecond.clock)")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
         }
-        .accessibilityLabel("Start \(step.minutes) minute timer")
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card, in: .rect(cornerRadius: 18))
+        .animation(.snappy, value: step.id)
     }
 
     private func key(_ need: StepNeed) -> String { "\(step.id)-\(need.label.lowercased())" }
 
-    /// The recipe ingredient line this need stands for, so a tick here also ticks the checklist.
     private func ingredientIndex(for need: StepNeed) -> Int? {
         let assets = recipe.ingredientAssets
-        if let asset = need.asset, let i = assets.firstIndex(of: asset) { return i }
+        if let asset = need.asset, let index = assets.firstIndex(of: asset) { return index }
         let label = need.label.lowercased()
         return recipe.ingredients.firstIndex { $0.lowercased().contains(label) }
     }
 }
 
-/// Icon, name and amount; tap to tick it off.
+/// The amount and ingredient are one large tap target; ticks sync with the recipe checklist.
 private struct NeedChip: View {
     let need: StepNeed
     let ticked: Bool
@@ -166,7 +279,7 @@ private struct NeedChip: View {
                         if ticked {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.callout)
-                                .foregroundStyle(.white, Theme.basil)
+                                .foregroundStyle(.white, Theme.actionFill)
                                 .offset(x: 4, y: -2)
                         }
                     }
@@ -185,6 +298,7 @@ private struct NeedChip: View {
                 }
             }
             .frame(width: 74)
+            .frame(minHeight: 78)
             .opacity(ticked ? 0.65 : 1)
             .contentShape(Rectangle())
         }
@@ -196,23 +310,75 @@ private struct NeedChip: View {
     }
 }
 
-// MARK: - Done slide
-
-private struct DoneBar: View {
+private struct DoneDetails: View {
     @Environment(CookSession.self) private var session
     let recipe: Recipe
+    let compact: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("That's the lot").font(.headline)
-                Text("\(recipe.steps.count) steps, about \(recipe.totalMinutes.cookTime).")
-                    .font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("That's the lot").font(.title3.weight(.semibold))
+            if compact {
+                Text("Enjoy your \(recipe.title).")
+                    .font(.body)
             }
-            Spacer(minLength: 8)
-            Button("New recipe") { session.reset() }
-                .buttonStyle(.borderedProminent)
+            Text("\(recipe.steps.count) steps, about \(recipe.totalMinutes.cookTime) all in, \(recipe.handsOnMinutes.cookTime) of it hands-on.")
+                .font(.body)
+            if compact {
+                Button("Back to ingredients") { session.go(to: .overview) }
+                    .buttonStyle(.bordered)
+                Button("New recipe") { session.reset() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.actionFill)
+            }
         }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card, in: .rect(cornerRadius: 18))
+    }
+}
+
+/// The steps are a real sequence, so numbered markers earn their place here.
+private struct StepStrip: View {
+    @Environment(CookSession.self) private var session
+    let steps: [RecipeStep]
+    let current: Int?
+    let done: Bool
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+                        let reached = done || (current.map { index <= $0 } ?? false)
+                        Button { session.goToStep(index) } label: {
+                            VStack(spacing: 6) {
+                                Text("\(index + 1)")
+                                    .font(.callout.weight(.bold))
+                                    .frame(width: 34, height: 34)
+                                    .background(reached ? Theme.actionFill : Theme.card, in: .circle)
+                                    .foregroundStyle(reached ? .white : .primary)
+                                Text(step.title)
+                                    .font(.caption2)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.center)
+                                    .frame(width: 72)
+                                    .foregroundStyle(index == current ? .primary : .secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .id(index)
+                        .accessibilityLabel("Step \(index + 1), \(step.title)")
+                        .accessibilityAddTraits(index == current ? .isSelected : [])
+                    }
+                }
+            }
+            .onChange(of: current) { _, new in
+                if let new { withAnimation { proxy.scrollTo(new, anchor: .center) } }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("All steps")
     }
 }
 

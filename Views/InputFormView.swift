@@ -37,6 +37,7 @@ struct InputFormView: View {
                         }
                         .labelStyle(.iconOnly)
                         .buttonBorderShape(.roundedRectangle)
+                        .frame(minWidth: 44, minHeight: 44)
                         .accessibilityLabel("Paste link")
                     }
                     if !session.linkText.isEmpty, session.youtubeURL == nil {
@@ -63,6 +64,7 @@ struct InputFormView: View {
                             }
                             .buttonBorderShape(.capsule)
                             .controlSize(.small)
+                            .frame(minHeight: 44)
                             .accessibilityLabel("Paste transcript")
                             Spacer()
                             if !session.transcriptText.isEmpty {
@@ -72,11 +74,7 @@ struct InputFormView: View {
                     }
                     .padding(.top, 8)
                 } label: {
-                    Label {
-                        Text("Paste the transcript \(Text("(optional)").foregroundStyle(.secondary))")
-                    } icon: {
-                        Image(systemName: "text.quote")
-                    }
+                    Label("Transcript (optional)", systemImage: "text.quote")
                     .font(.subheadline)
                 }
 
@@ -113,13 +111,16 @@ struct InputFormView: View {
             focused = nil
             Task { await session.makeSlideshow() }
         } label: {
-            Label("Make slideshow", systemImage: "sparkles").frame(maxWidth: .infinity)
+            Label("Make slideshow", systemImage: "sparkles")
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(.borderedProminent)
+        .tint(Theme.actionFill)
         .disabled(!session.canMakeSlideshow)
 
         Button("Demo") { Task { await session.loadDemo() } }
             .buttonStyle(.bordered)
+            .frame(minHeight: 44)
             .disabled(session.phase == .working)
             .accessibilityLabel("Show the demo recipe")
     }

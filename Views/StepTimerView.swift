@@ -13,18 +13,18 @@ struct StepTimerView: View {
             let clock = Duration.seconds(remaining).formatted(.time(pattern: .minuteSecond))
             HStack(spacing: 14) {
                 ZStack {
-                    Circle().stroke(Theme.butter.opacity(0.25), lineWidth: 7)
+                    Circle().stroke(Theme.timer.opacity(0.25), lineWidth: 7)
                     Circle().trim(from: 0, to: progress)
-                        .stroke(Theme.butter, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                        .stroke(Theme.timer, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                     Text(clock)
-                        .font(.callout.weight(.bold))
+                        .font(.title3.weight(.bold))
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
                         .padding(10)
                 }
-                .frame(width: 70, height: 70)
+                .frame(width: 84, height: 84)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(remaining == 0 ? "Timer finished" : "\(clock) remaining")
 
@@ -36,6 +36,7 @@ struct StepTimerView: View {
                         .foregroundStyle(.secondary)
                     Button("Stop timer", role: .cancel) { session.stopTimer() }
                         .font(.subheadline)
+                        .frame(minHeight: 44, alignment: .leading)
                 }
                 Spacer()
             }

@@ -3,25 +3,28 @@ import SwiftUI
 /// Adapts to the container, never to UIScreen (on iPhone Duo, UIScreen.main
 /// reports the outer display even while the app runs on the inner one).
 ///
-///  Tall (closed 466x678, or open and rotated 669x951)     Wide (open 951x669)
-///  ┌───────────────┐                                      ┌─────────────┬─────────────┐
-///  │  video (16:9) │                                      │ video (16:9)│             │
-///  ├───────────────┤                                      ├─────────────┤  slideshow  │
-///  │   slideshow   │                                      │  cook bar   │             │
-///  │  (the rest)   │                                      │             │             │
-///  ├───────────────┤                                      └────────── hinge ──────────┘
-///  │   cook bar    │
-///  └───────────────┘
-///
-/// The video sits on top, full width, and follows the slides. Wide containers still split
-/// 50/50 on the physical centre line so the seam lands on the hinge; tall ones give the
-/// slideshow everything the video and the compact cook bar leave.
+/// Closed: one cooking panel with a video sheet. Open: video and details share
+/// one side of the hinge, while the slideshow occupies the other side.
 struct RootView: View {
+    @Environment(CookSession.self) private var session
+    @State private var showVideo = false
+
     var body: some View {
         GeometryReader { geo in
             let plan = LayoutPlan(safeAreaSize: geo.size, insets: geo.safeAreaInsets)
             Group {
-                if plan.isWide {
+                if !plan.usesTwoPanels {
+                    VStack(spacing: 0) {
+                        DetailsPanelView(compact: true)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if session.phase == .ready {
+                            SlideshowBar(compact: true, onShowVideo: { showVideo = true })
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Theme.card)
+                        }
+                    }
+                } else if plan.isWide {
                     HStack(spacing: 0) {
                         VStack(spacing: 0) {
                             VideoPanelView()
@@ -35,41 +38,49 @@ struct RootView: View {
                     }
                 } else {
                     VStack(spacing: 0) {
-                        VideoPanelView()
+                        VStack(spacing: 0) {
+                            VideoPanelView()
+                            DetailsPanelView()
+                                .frame(maxHeight: .infinity)
+                        }
+                        .frame(height: plan.leadingPanelLength)
+                        .overlay(alignment: .bottom) { Seam(.horizontal) }
                         SlideshowView()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .overlay(alignment: .bottom) { Seam(.horizontal) }
-                        DetailsPanelView()
-                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxHeight: .infinity)
                     }
                 }
             }
-            .animation(.snappy, value: plan.isWide)
+            .animation(.snappy, value: plan.usesTwoPanels)
+            .onChange(of: session.videoReplays) { _, _ in
+                if !plan.usesTwoPanels { showVideo = true }
+            }
         }
         .background(Theme.canvas)
-        .fontDesign(.rounded)
-        .tint(Theme.basil)
+        .tint(Theme.accent)
+        .sheet(isPresented: $showVideo) {
+            VideoPanelView()
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
     }
 }
 
 /// What the layout needs, computed once per container size.
 struct LayoutPlan: Equatable {
     let isWide: Bool
+    let usesTwoPanels: Bool
     /// Full display size, safe-area insets included.
     let size: CGSize
     /// Width (wide) or height (tall) of the leading panel inside the safe area,
     /// chosen so the seam sits on the physical centre line.
     let leadingPanelLength: CGFloat
-    /// Tall pose: the slideshow's height under the video, leaving the details room to scroll.
-    let slideshowHeight: CGFloat
 
     init(safeAreaSize: CGSize, insets: EdgeInsets) {
         size = CGSize(width: safeAreaSize.width + insets.leading + insets.trailing,
                       height: safeAreaSize.height + insets.top + insets.bottom)
         isWide = size.width > size.height
+        usesTwoPanels = min(size.width, size.height) >= 600
         leadingPanelLength = isWide ? size.width / 2 - insets.leading : size.height / 2 - insets.top
-        let videoHeight = safeAreaSize.width * 9 / 16 + 12
-        slideshowHeight = max(240, (safeAreaSize.height - videoHeight) * 0.5)
     }
 }
 

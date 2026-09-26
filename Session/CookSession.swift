@@ -136,6 +136,10 @@ final class CookSession {
     private func clear() {
         imageTask?.cancel(); imageTask = nil
         priorityImageTask?.cancel(); priorityImageTask = nil
+        voiceTask?.cancel(); voiceTask = nil
+        voice.stopListening()
+        voiceEnabled = false
+        if let timer { TimerNotifications.shared.cancel(stepID: timer.stepID) }
         requestedImages = []
         speaker.stopSpeaking()
         recipe = nil
@@ -178,7 +182,7 @@ final class CookSession {
 
     /// Play the current step's part of the video again; without a video, say the slide instead.
     func repeatStep() {
-        if recipe?.videoID != nil {
+        if recipe?.videoID != nil, currentStep != nil {
             videoReplays += 1
         } else {
             speakCurrentSlide(force: true)
