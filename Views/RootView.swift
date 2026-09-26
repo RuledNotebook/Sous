@@ -28,18 +28,22 @@ struct RootView: View {
                     }
                 } else if plan.isWide {
                     HStack(spacing: 0) {
-                        leadingPanel
+                        leadingPanel(maxVideoHeight: nil)
+                            .padding(.trailing, plan.hingeInset)
                             .frame(width: plan.leadingPanelLength)
                             .overlay(alignment: .trailing) { Seam(.vertical) }
                         SlideshowView()
+                            .padding(.leading, plan.hingeInset)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
                     VStack(spacing: 0) {
-                        leadingPanel
+                        leadingPanel(maxVideoHeight: plan.leadingPanelLength - plan.hingeInset)
+                            .padding(.bottom, plan.hingeInset)
                             .frame(height: plan.leadingPanelLength)
                             .overlay(alignment: .bottom) { Seam(.horizontal) }
                         SlideshowView()
+                            .padding(.top, plan.hingeInset)
                             .frame(maxHeight: .infinity)
                     }
                 }
@@ -64,10 +68,10 @@ struct RootView: View {
     }
 
     /// Video (folding) over the details: the whole upper display when open and tall, the left half when wide.
-    private var leadingPanel: some View {
+    private func leadingPanel(maxVideoHeight: CGFloat?) -> some View {
         VStack(spacing: 0) {
             // Sized first, so the player gets the full width and the details take what's left.
-            VideoHeaderView()
+            VideoHeaderView(maxHeight: maxVideoHeight)
                 .layoutPriority(1)
             DetailsPanelView()
                 .frame(maxHeight: .infinity)
@@ -84,6 +88,9 @@ struct LayoutPlan: Equatable {
     /// Width (wide) or height (tall) of the leading panel inside the safe area,
     /// chosen so the seam sits on the physical centre line.
     let leadingPanelLength: CGFloat
+    /// Points kept clear on each side of the fold, where the two displays' edges hide content
+    /// (`UIHinge` reports only the angle, not where the hinge is). Buttons never sit inside it.
+    let hingeInset: CGFloat = 24
 
     init(safeAreaSize: CGSize, insets: EdgeInsets) {
         size = CGSize(width: safeAreaSize.width + insets.leading + insets.trailing,

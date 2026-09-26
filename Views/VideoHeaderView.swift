@@ -9,6 +9,12 @@ struct VideoHeaderView: View {
     @Environment(VideoController.self) private var video
     /// False in the closed-pose sheet, where there is nothing to fold away for.
     var collapsible = true
+    /// Room the header may take in total (player, buttons, padding). On the upper display of an open
+    /// Duo that is the half above the hinge; the player shrinks below 16:9-of-width to fit. nil = no cap.
+    var maxHeight: CGFloat? = nil
+
+    /// Everything around the expanded player: top and bottom padding, the gap, and the button row.
+    private static let chromeHeight: CGFloat = 12 + 10 + 44 + 8
 
     /// Width available to the expanded player, measured once; the web view is laid out at this size
     /// in both states and only scaled when folded, so WebKit never re-lays out mid-animation.
@@ -86,7 +92,11 @@ struct VideoHeaderView: View {
     /// identity in both states, so playback carries on. While folded and paused, the video's own
     /// thumbnail covers YouTube's title bar and play button, which would otherwise fill the box.
     private func playerStage(videoID: String, recipe: Recipe, collapsed: Bool) -> some View {
-        let full = CGSize(width: max(expandedWidth, 1), height: max(expandedWidth, 1) * 9 / 16)
+        var full = CGSize(width: max(expandedWidth, 1), height: max(expandedWidth, 1) * 9 / 16)
+        if let maxHeight {
+            let room = max(maxHeight - Self.chromeHeight, 90)
+            if full.height > room { full = CGSize(width: room * 16 / 9, height: room) }
+        }
         let mini = Self.miniSize
         let scale = collapsed ? mini.width / full.width : 1
         return ZStack(alignment: .topLeading) {
@@ -119,6 +129,7 @@ struct VideoHeaderView: View {
         }
         .frame(width: collapsed ? mini.width : full.width, height: collapsed ? mini.height : full.height, alignment: .topLeading)
         .clipShape(.rect(cornerRadius: collapsed ? 8 : 14))
+        .frame(maxWidth: collapsed ? nil : .infinity)   // a height-capped player sits centred
         .accessibilityLabel("Cooking video")
     }
 
