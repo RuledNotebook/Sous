@@ -13,7 +13,16 @@ struct YouTubeRecipeSource: RecipeSource {
     var videoExtractor: (any VideoRecipeExtractor)?
 
     static func live(bundle: Bundle = .main) -> YouTubeRecipeSource {
-        YouTubeRecipeSource(videoExtractor: GeminiVideoRecipeExtractor.fromInfoPlist(bundle))
+        var source = YouTubeRecipeSource(videoExtractor: GeminiVideoRecipeExtractor.fromInfoPlist(bundle))
+        // Supadata first when configured, YouTube's own captions as the free fallback.
+        if let supadata = SupadataTranscriptProvider.fromInfoPlist(bundle) {
+            source.transcripts = FirstWorkingTranscriptProvider(providers: [supadata, YouTubeCaptionsTranscriptProvider()])
+        }
+        // OpenAI writes the recipe when configured; otherwise the on-device model.
+        if let openAI = OpenAIRecipeExtractor.fromInfoPlist(bundle) {
+            source.transcriptExtractor = openAI
+        }
+        return source
     }
 
     func recipe(for request: RecipeRequest) async throws -> SourcedRecipe {

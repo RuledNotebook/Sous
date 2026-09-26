@@ -279,14 +279,15 @@ nonisolated enum FoundationModelsErrors {
 // MARK: - Routing between on-device, cloud and the demo fallback
 
 /// Picks an analyzer per video: the cloud when on-device isn't available or the video is very
-/// long, otherwise on-device; the mock only when nothing else exists. Falls back from cloud to
+/// long, otherwise on-device; throws when nothing is configured. Falls back from cloud to
 /// on-device when the network call fails.
 ///
 /// Wire it up with `analyzer: RoutingRecipeAnalyzer.live()` in `CookSession.live()`.
 struct RoutingRecipeAnalyzer: RecipeAnalyzer {
     var onDevice: (any RecipeAnalyzer)?
     var cloud: (any RecipeAnalyzer)?
-    var fallback: any RecipeAnalyzer = MockRecipeAnalyzer()
+    /// Only for tests and previews. Nothing is wired here in the app, so a failure is shown, never the demo.
+    var fallback: (any RecipeAnalyzer)?
     /// Videos longer than this go to the cloud when it is configured.
     var longVideoSeconds: Double = 20 * 60
     /// Transcripts above this many estimated tokens go to the cloud when it is configured.
@@ -313,7 +314,8 @@ struct RoutingRecipeAnalyzer: RecipeAnalyzer {
             }
         }
         if let onDevice { return try await onDevice.recipe(from: transcript, videoDuration: videoDuration) }
-        return try await fallback.recipe(from: transcript, videoDuration: videoDuration)
+        if let fallback { return try await fallback.recipe(from: transcript, videoDuration: videoDuration) }
+        throw RecipeAnalysisError.modelUnavailable(OnDeviceRecipeAnalyzer.unavailableReason ?? "No recipe model is configured.")
     }
 }
 
