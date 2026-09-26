@@ -31,7 +31,8 @@ nonisolated enum RecipeAnalysisError: LocalizedError, Equatable {
 /// What one window of transcript yields.
 nonisolated struct ExtractedWindow: Sendable {
     var steps: [StepCandidate]
-    var ingredients: [String]
+    /// Ingredient claims with the transcript words behind them, verified later against the transcript.
+    var ingredients: [IngredientEvidence]
 }
 
 /// Anything that can turn one transcript window into steps. Implementations must throw
@@ -94,7 +95,7 @@ struct ChunkedRecipePipeline: Sendable {
                                               overlapLines: overlapLines, videoDuration: videoDuration)
         note("\(lines.count) transcript lines -> \(windows.count) windows")
         var candidates: [StepCandidate] = []
-        var ingredients: [String] = []
+        var ingredients: [IngredientEvidence] = []
         var failures: [any Error] = []
         var succeeded = 0
 
@@ -147,7 +148,11 @@ struct ChunkedRecipePipeline: Sendable {
             let after = steps.reduce(0) { $0 + $1.minutes }
             if after != before { note("title promises \(promised) min: scaled unspoken minutes \(before) -> \(after)") }
         }
-        let allIngredients = Self.dedupeIngredients(ingredients)
+        // Ingredients: only claims whose words are really in the transcript survive.
+        let evidence = IngredientGrounding.verify(ingredients, transcript: lines)
+        let allIngredients = Self.dedupeIngredients(IngredientGrounding.kept(evidence))
+        note(IngredientGrounding.table(evidence))
+        steps = StepItemGrounding.apply(to: steps, transcript: lines)
 
         var meta = RecipeMetadata(title: "Recipe from video", servings: 4, difficulty: Self.difficulty(for: steps),
                                   ingredients: allIngredients)
@@ -157,7 +162,7 @@ struct ChunkedRecipePipeline: Sendable {
                 meta.title = m.title.isEmpty ? meta.title : m.title
                 meta.servings = (1...12).contains(m.servings) ? m.servings : meta.servings
                 meta.difficulty = ["easy", "medium", "hard"].contains(m.difficulty) ? m.difficulty : meta.difficulty
-                meta.ingredients = m.ingredients.isEmpty ? allIngredients : Self.dedupeIngredients(m.ingredients)
+                // The ingredient list stays the verified one; the model only names the dish.
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -165,7 +170,7 @@ struct ChunkedRecipePipeline: Sendable {
             }
         }
         return Recipe(title: meta.title, servings: meta.servings, difficulty: meta.difficulty,
-                      ingredients: meta.ingredients, steps: steps)
+                      ingredients: meta.ingredients, steps: steps, ingredientEvidence: evidence)
     }
 
     /// Extracts one window, halving it and recursing when the model reports a context overflow.

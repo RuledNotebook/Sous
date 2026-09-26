@@ -20,9 +20,13 @@ final class FakeMetadata: VideoMetadataProvider {
 final class FakeTranscriptExtractor: TranscriptRecipeExtractor {
     var isAvailable: Bool
     var unavailableReason: String? { isAvailable ? nil : "Turn on Apple Intelligence in Settings." }
+    var modelName = "fake"
+    var runsOnDevice = false
+    var sends: Int?
     var received: [TranscriptLine] = []
     var receivedDuration = 0.0
-    init(available: Bool) { isAvailable = available }
+    init(available: Bool, onDevice: Bool = false, name: String = "fake") { isAvailable = available; runsOnDevice = onDevice; modelName = name }
+    func charactersSent(for transcript: [TranscriptLine]) -> Int { sends ?? TranscriptChunker.render(transcript).count }
     var receivedVideo: VideoMetadata?
     func recipe(from transcript: [TranscriptLine], videoDuration: Double, video: VideoMetadata?) async throws -> Recipe {
         received = transcript
@@ -178,6 +182,41 @@ struct YouTubeRecipeSourceTests {
         #expect(metadata.calls.isEmpty)
     }
 
+    @Test func cloudModelReplacesOnDeviceWithTheFullTranscript() async throws {
+        let onDevice = FakeTranscriptExtractor(available: true, onDevice: true, name: "on-device")
+        let cloud = FakeTranscriptExtractor(available: true, name: "OpenAI gpt-5-mini")
+        var notes: [String] = []
+        let sink = NoteSink()
+        var source = YouTubeRecipeSource(metadata: FakeMetadata(), transcripts: FakeTranscriptProvider(), transcriptExtractor: onDevice, videoExtractor: nil)
+        source.cloudExtractor = cloud
+        source.trace = { sink.append($0) }
+        _ = try await source.recipe(for: RecipeRequest(link: link))
+        notes = sink.lines
+        #expect(cloud.received.count == 2 && onDevice.received.isEmpty)
+        #expect(notes.contains { $0.contains("switching to OpenAI gpt-5-mini with the full transcript") })
+        #expect(notes.contains { $0.hasPrefix("model: OpenAI gpt-5-mini | transcript: 2 lines") && $0.contains("(100%)") })
+    }
+
+    @Test func thinnedTranscriptAlsoGoesToTheCloud() async throws {
+        let thinning = FakeTranscriptExtractor(available: true, name: "small-cloud")
+        thinning.sends = 5
+        let cloud = FakeTranscriptExtractor(available: true, name: "big-cloud")
+        var source = YouTubeRecipeSource(metadata: FakeMetadata(), transcripts: FakeTranscriptProvider(), transcriptExtractor: thinning, videoExtractor: nil)
+        source.cloudExtractor = cloud
+        let choice = source.chooseExtractor(for: [.init(start: 0, text: "put the water on"), .init(start: 5, text: "eggs in")])
+        #expect(choice.extractor.modelName == "big-cloud")
+        #expect(choice.reason?.contains("would thin the transcript") == true)
+        #expect(!choice.report.isThinned)
+    }
+
+    @Test func withoutACloudKeyTheDefaultExtractorIsUsedAndReported() async throws {
+        let onDevice = FakeTranscriptExtractor(available: true, onDevice: true, name: "on-device")
+        let source = YouTubeRecipeSource(metadata: FakeMetadata(), transcripts: FakeTranscriptProvider(), transcriptExtractor: onDevice, videoExtractor: nil)
+        let choice = source.chooseExtractor(for: [.init(start: 0, text: "put the water on")])
+        #expect(choice.extractor.modelName == "on-device")
+        #expect(choice.reason == nil)
+    }
+
     @Test func unavailableVideoIsReported() async {
         let metadata = FakeMetadata()
         metadata.error = .videoUnavailable
@@ -217,4 +256,11 @@ struct YouTubeMetadataTests {
         #expect(items.first { $0.name == "url" }?.value == "https://www.youtube.com/watch?v=4aZr5hZXP_s")
         #expect(items.first { $0.name == "format" }?.value == "json")
     }
+}
+
+
+@MainActor
+final class NoteSink: Sendable {
+    nonisolated(unsafe) private(set) var lines: [String] = []
+    nonisolated func append(_ line: String) { lines.append(line) }
 }

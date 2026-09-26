@@ -67,7 +67,18 @@ protocol TranscriptRecipeExtractor {
     var isAvailable: Bool { get }
     /// Why `isAvailable` is false, for the error message.
     var unavailableReason: String? { get }
+    /// For the console: "OpenAI gpt-5-mini", "on-device Apple Intelligence".
+    var modelName: String { get }
+    /// True for the small on-device model; the source prefers a cloud model with the full transcript.
+    var runsOnDevice: Bool { get }
+    /// How many rendered transcript characters this extractor would actually send.
+    func charactersSent(for transcript: [TranscriptLine]) -> Int
     func recipe(from transcript: [TranscriptLine], videoDuration: Double, video: VideoMetadata?) async throws -> Recipe
+}
+
+extension TranscriptRecipeExtractor {
+    var runsOnDevice: Bool { false }
+    func charactersSent(for transcript: [TranscriptLine]) -> Int { TranscriptChunker.render(transcript).count }
 }
 
 /// Path B: a recipe from the video itself, analysed in the cloud.

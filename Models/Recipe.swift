@@ -12,6 +12,7 @@ nonisolated struct Recipe: Identifiable, Hashable, Codable, Sendable {
     var sourceURL: URL?                 // the YouTube link the recipe came from
     var thumbnailURL: URL?              // video thumbnail, shown on the ingredients slide
     var channel: String?                // the YouTube channel, if known
+    var ingredientEvidence: [IngredientEvidence]?   // where each ingredient was said; see IngredientGrounding
 
     var totalMinutes: Int   { steps.reduce(0) { $0 + $1.minutes } }
     var handsOnMinutes: Int { steps.filter(\.isHandsOn).reduce(0) { $0 + $1.minutes } }
@@ -49,6 +50,22 @@ nonisolated struct RecipeStep: Identifiable, Hashable, Codable, Sendable {
     var imagePrompt: String     // fed to the image generator
     var vessel: Vessel?         // where the step happens, if the model said; see RecipeStep.sceneVessel
     var items: [String]?        // Kitchen asset names the model picked; see RecipeStep.sceneItems
+}
+
+/// One ingredient and the transcript words that back it up. `found` is nil until the words
+/// have been checked against the transcript (see `IngredientGrounding`).
+nonisolated struct IngredientEvidence: Hashable, Codable, Sendable {
+    var name: String
+    var amount: String
+    var evidence: String
+    var second: Int
+    var found: Bool?
+
+    /// "6 tbsp soy sauce", or just the name when no amount was said.
+    var label: String {
+        let trimmed = amount.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? name : "\(trimmed) \(name)"
+    }
 }
 
 /// Where a step happens. Drawn large in the middle of the step slide.

@@ -16,10 +16,22 @@ protocol RecipeAnalyzer {
 /// One window's worth of steps. Kept small so instructions + schema + output fit the ~4k context.
 @Generable
 nonisolated struct GeneratedWindow {
-    @Guide(description: "Ingredients mentioned in this section, with amounts if spoken, e.g. '200 g spaghetti'. Empty if none.", .maximumCount(12))
-    var ingredients: [String]
+    @Guide(description: "Ingredients the cook says in this section, each with the exact transcript words that name it. Empty if none.", .maximumCount(10))
+    var ingredients: [GeneratedIngredient]
     @Guide(description: "Cooking steps whose action begins in this section, in video order. Empty if nothing is cooked here.", .maximumCount(8))
     var steps: [GeneratedStep]
+}
+
+@Generable
+nonisolated struct GeneratedIngredient {
+    @Guide(description: "Ingredient name as a cook would write it")
+    var name: String
+    @Guide(description: "Amount as said, e.g. '6 tablespoons'; empty string if none is said")
+    var amount: String
+    @Guide(description: "The exact words from the transcript that name this ingredient, copied word-for-word")
+    var evidence: String
+    @Guide(description: "The [Ns] timestamp of the transcript line the evidence is on", .minimum(0))
+    var second: Int
 }
 
 @Generable
@@ -93,9 +105,7 @@ nonisolated enum RecipePrompts {
     static let windowInstructions = """
         You turn one section of a cooking video transcript into cooking steps.
         \(rules)
-        ingredients: only those mentioned in this section, written as a cook would say them, with \
-        amounts if spoken (for example "2 tbsp soy sauce"). If nothing is cooked in this section, \
-        return no steps.
+        \(IngredientGrounding.promptRule) If nothing is cooked in this section, return no steps.
         vessel is where the step happens: pot, pan, bowl, board, oven or plate. \
         items is different from ingredients: the picture assets for the step, chosen only from this \
         list of asset names: \(KitchenAssets.promptList.joined(separator: ", ")).
@@ -133,6 +143,7 @@ nonisolated enum RecipePrompts {
         starting with a verb, one or two clear sentences, startSecond, minutes, isHandsOn, \
         needsTimer, a short tip (or empty string) and an imagePrompt describing the finished \
         state of the step for an image generator with no people or text.
+        \(IngredientGrounding.promptRule)
         """
 }
 
@@ -192,7 +203,10 @@ struct FoundationModelsWindowExtractor: WindowExtractor {
         do {
             let generated = try await session.respond(to: prompt, generating: GeneratedWindow.self,
                                                       options: GenerationOptions(samplingMode: .greedy)).content
-            return ExtractedWindow(steps: generated.steps.map(StepCandidate.init), ingredients: generated.ingredients)
+            let claims = generated.ingredients.map {
+                IngredientEvidence(name: $0.name, amount: $0.amount, evidence: $0.evidence, second: $0.second, found: nil)
+            }
+            return ExtractedWindow(steps: generated.steps.map(StepCandidate.init), ingredients: claims)
         } catch {
             throw FoundationModelsErrors.translate(error)
         }

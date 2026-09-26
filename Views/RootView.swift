@@ -3,11 +3,13 @@ import SwiftUI
 /// Adapts to the container, never to UIScreen (on iPhone Duo, UIScreen.main
 /// reports the outer display even while the app runs on the inner one).
 ///
-/// Closed: one cooking panel with a video sheet. Open: video and details share
-/// one side of the hinge, while the slideshow occupies the other side.
+/// Closed: one cooking panel with a video sheet. Open: the video (folding away when the
+/// cook scrolls to read) sits over the details on one side of the hinge, the slideshow on
+/// the other: the left half when wide, the upper display when tall.
 struct RootView: View {
     @Environment(CookSession.self) private var session
     @State private var showVideo = false
+    @State private var video = VideoController()
 
     var body: some View {
         GeometryReader { geo in
@@ -26,30 +28,23 @@ struct RootView: View {
                     }
                 } else if plan.isWide {
                     HStack(spacing: 0) {
-                        VStack(spacing: 0) {
-                            VideoPanelView()
-                            DetailsPanelView()
-                                .frame(maxHeight: .infinity)
-                        }
-                        .frame(width: plan.leadingPanelLength)
-                        .overlay(alignment: .trailing) { Seam(.vertical) }
+                        leadingPanel
+                            .frame(width: plan.leadingPanelLength)
+                            .overlay(alignment: .trailing) { Seam(.vertical) }
                         SlideshowView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
                     VStack(spacing: 0) {
-                        VStack(spacing: 0) {
-                            VideoPanelView()
-                            DetailsPanelView()
-                                .frame(maxHeight: .infinity)
-                        }
-                        .frame(height: plan.leadingPanelLength)
-                        .overlay(alignment: .bottom) { Seam(.horizontal) }
+                        leadingPanel
+                            .frame(height: plan.leadingPanelLength)
+                            .overlay(alignment: .bottom) { Seam(.horizontal) }
                         SlideshowView()
                             .frame(maxHeight: .infinity)
                     }
                 }
             }
+            .environment(video)
             .animation(.snappy, value: plan.usesTwoPanels)
             .onChange(of: session.videoReplays) { _, _ in
                 if !plan.usesTwoPanels { showVideo = true }
@@ -58,9 +53,21 @@ struct RootView: View {
         .background(Theme.canvas)
         .tint(Theme.accent)
         .sheet(isPresented: $showVideo) {
-            VideoPanelView()
+            VideoHeaderView(collapsible: false)
+                .environment(video)
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+        }
+    }
+
+    /// Video (folding) over the details: the whole upper display when open and tall, the left half when wide.
+    private var leadingPanel: some View {
+        VStack(spacing: 0) {
+            // Sized first, so the player gets the full width and the details take what's left.
+            VideoHeaderView()
+                .layoutPriority(1)
+            DetailsPanelView()
+                .frame(maxHeight: .infinity)
         }
     }
 }

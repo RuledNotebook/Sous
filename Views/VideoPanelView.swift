@@ -1,3 +1,4 @@
+import Observation
 import SwiftUI
 import WebKit
 
@@ -7,69 +8,98 @@ nonisolated struct VideoSegment: Equatable, Sendable {
     var end: Int?
 }
 
-/// The YouTube video, wide, following the slideshow: every step slide jumps the video to the moment
-/// the cook says it and pauses where the next step starts. Nothing shows until a recipe with a video is on.
-struct VideoPanelView: View {
-    @Environment(CookSession.self) private var session
+/// A play or pause press. The serial makes each press distinct, even two "play"s in a row.
+nonisolated struct PlaybackCommand: Equatable, Sendable {
+    var serial: Int
+    var play: Bool
+}
 
-    var body: some View {
-        if session.phase == .ready, let recipe = session.recipe, let videoID = recipe.videoID {
-            Color.black
-                .aspectRatio(16 / 9, contentMode: .fit)
-                .overlay { YouTubePlayerView(videoID: videoID, segment: segment(in: recipe), replay: session.videoReplays) }
-                .clipShape(.rect(cornerRadius: 14))
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
-                .accessibilityLabel("Cooking video")
-        }
+/// What the cook has asked of the video, and what the player says it is doing.
+/// Shared by the header (buttons), the details scroll (folds the header) and the player itself.
+@Observable @MainActor
+final class VideoController {
+    /// Reported by the player page; the play/pause button follows this, not its own guess.
+    private(set) var isPlaying = false
+    private(set) var isReady = false
+    private(set) var command = PlaybackCommand(serial: 0, play: true)
+    /// The cook folded the video away, or pulled it back, by hand. nil means: follow the scroll.
+    var manualCollapsed: Bool?
+    /// True while the details are scrolled past the top.
+    private(set) var detailsScrolled = false
+
+    init() {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "autoCollapseVideo") { manualCollapsed = true }
+        #endif
     }
 
-    private func segment(in recipe: Recipe) -> VideoSegment? {
-        guard case .step(let index) = session.slide, recipe.steps.indices.contains(index) else { return nil }
-        let steps = recipe.steps
-        let start = steps[index].startSecond
-        let next = index + 1 < steps.count ? steps[index + 1].startSecond : nil
-        return VideoSegment(start: start, end: next.flatMap { $0 > start ? $0 : nil })
+    var isCollapsed: Bool { manualCollapsed ?? detailsScrolled }
+
+    func togglePlayback() { command = PlaybackCommand(serial: command.serial + 1, play: !isPlaying) }
+    func toggleCollapsed() { manualCollapsed = !isCollapsed }
+
+    /// Scrolling the details folds the header; scrolling back up unfolds it and forgets a manual choice.
+    func detailsScrolled(_ down: Bool) {
+        guard down != detailsScrolled else { return }
+        detailsScrolled = down
+        manualCollapsed = nil
+    }
+
+    /// YouTube player states: -1 unstarted, 0 ended, 1 playing, 2 paused, 3 buffering, 5 cued; -2 is our "ready".
+    func playerReported(state: Int) {
+        if state == -2 { isReady = true; return }
+        isPlaying = state == 1 || state == 3
     }
 }
 
 /// YouTube's IFrame player in a web view. A new `segment` seeks and plays; nil pauses.
+/// A new `command` plays or pauses in place. State changes come back through `controller`.
 struct YouTubePlayerView: UIViewRepresentable {
     let videoID: String
     let segment: VideoSegment?
     /// Any change plays `segment` again from its start ("repeat").
     var replay = 0
+    var command = PlaybackCommand(serial: 0, play: true)
+    var controller: VideoController?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
+        let coordinator = context.coordinator
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
+        configuration.userContentController.add(MessageProxy(coordinator), name: "cook")
         let web = WKWebView(frame: .zero, configuration: configuration)
         web.isOpaque = false
         web.backgroundColor = .black
         web.scrollView.isScrollEnabled = false
         web.scrollView.bounces = false
-        web.navigationDelegate = context.coordinator
-        context.coordinator.load(videoID, into: web)
+        web.navigationDelegate = coordinator
+        coordinator.controller = controller
+        coordinator.load(videoID, into: web)
         return web
     }
 
     func updateUIView(_ web: WKWebView, context: Context) {
         let coordinator = context.coordinator
+        coordinator.controller = controller
         if coordinator.videoID != videoID { coordinator.load(videoID, into: web) }
+        if coordinator.commandSerial != command.serial {
+            coordinator.commandSerial = command.serial
+            coordinator.run("cook({seek: null, stopAt: null, play: \(command.play), keepStop: true})", in: web)
+        }
         guard !coordinator.sentFirstCommand || coordinator.segment != segment || coordinator.replay != replay else { return }
         coordinator.sentFirstCommand = true
         coordinator.segment = segment
         coordinator.replay = replay
-        let command: String
+        let script: String
         if let segment {
-            command = "cook({seek: \(segment.start), stopAt: \(segment.end.map(String.init) ?? "null"), play: true})"
+            script = "cook({seek: \(segment.start), stopAt: \(segment.end.map(String.init) ?? "null"), play: true})"
         } else {
-            command = "cook({seek: null, stopAt: null, play: false})"
+            script = "cook({seek: null, stopAt: null, play: false})"
         }
-        coordinator.run(command, in: web)
+        coordinator.run(script, in: web)
     }
 
     /// Keeps the page and the player's commands in step: commands sent before the page has loaded wait.
@@ -77,9 +107,11 @@ struct YouTubePlayerView: UIViewRepresentable {
         var videoID = ""
         var segment: VideoSegment?
         var replay = 0
+        var commandSerial = 0
         var sentFirstCommand = false
+        weak var controller: VideoController?
         private var loaded = false
-        private var pending: String?
+        private var pending: [String] = []
 
         func load(_ id: String, into web: WKWebView) {
             videoID = id
@@ -90,26 +122,40 @@ struct YouTubePlayerView: UIViewRepresentable {
             web.loadHTMLString(YouTubePlayerView.html(videoID: id), baseURL: URL(string: YouTubePlayerView.origin))
         }
 
-        func run(_ command: String, in web: WKWebView) {
+        func run(_ script: String, in web: WKWebView) {
             if loaded {
-                web.evaluateJavaScript(command)
+                web.evaluateJavaScript(script)
             } else {
-                pending = command
+                pending.append(script)
             }
         }
 
         func webView(_ web: WKWebView, didFinish navigation: WKNavigation!) {
             loaded = true
-            if let pending {
-                self.pending = nil
-                web.evaluateJavaScript(pending)
-            }
+            for script in pending { web.evaluateJavaScript(script) }
+            pending.removeAll()
+        }
+
+        func playerReported(state: Int) {
+            controller?.playerReported(state: state)
+        }
+    }
+
+    /// The web view retains its message handlers; this stands between so the coordinator can go away.
+    final class MessageProxy: NSObject, WKScriptMessageHandler {
+        private weak var coordinator: Coordinator?
+        init(_ coordinator: Coordinator) { self.coordinator = coordinator }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard let state = (message.body as? NSNumber)?.intValue else { return }
+            coordinator?.playerReported(state: state)
         }
     }
 
     static let origin = "https://cookalong.app"
 
     /// The player page. `cook(cmd)` queues until the player is ready; a small timer pauses at `stopAt`.
+    /// Player state changes are posted back as numbers (see `VideoController.playerReported`).
     static func html(videoID: String) -> String {
         """
         <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -118,6 +164,7 @@ struct YouTubePlayerView: UIViewRepresentable {
         <body><div id="player"></div>
         <script>
         var player = null, ready = false, pending = null, stopAt = null;
+        function post(state) { try { window.webkit.messageHandlers.cook.postMessage(state); } catch (e) {} }
         var tag = document.createElement('script');
         tag.src = 'https://www.youtube.com/iframe_api';
         document.head.appendChild(tag);
@@ -125,11 +172,14 @@ struct YouTubePlayerView: UIViewRepresentable {
           player = new YT.Player('player', {
             videoId: '\(videoID)',
             playerVars: { playsinline: 1, controls: 1, rel: 0, modestbranding: 1, origin: '\(origin)' },
-            events: { onReady: function () { ready = true; if (pending) { apply(pending); pending = null; } } }
+            events: {
+              onReady: function () { ready = true; post(-2); if (pending) { apply(pending); pending = null; } },
+              onStateChange: function (e) { post(e.data); }
+            }
           });
         }
         function apply(cmd) {
-          stopAt = cmd.stopAt;
+          if (!cmd.keepStop) { stopAt = cmd.stopAt; }
           if (cmd.seek !== null && cmd.seek !== undefined) { player.seekTo(cmd.seek, true); }
           if (cmd.play) { player.playVideo(); } else { player.pauseVideo(); }
         }
