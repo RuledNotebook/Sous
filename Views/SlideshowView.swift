@@ -80,7 +80,7 @@ private struct SlideView: View {
             case .step(let index):
                 if recipe.steps.indices.contains(index) {
                     let step = recipe.steps[index]
-                    StepSlide(step: step, index: index, count: recipe.steps.count, image: session.stepImages[step.id])
+                    StepSlide(step: step, index: index, count: recipe.steps.count, isActive: session.slide == slide)
                 }
             case .done:
                 DoneSlide(recipe: recipe)
@@ -122,13 +122,10 @@ private struct OverviewSlide: View {
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(recipe.ingredients.enumerated()), id: \.offset) { index, ingredient in
-                        IngredientRow(text: ingredient, checked: session.checkedIngredients.contains(index)) {
-                            session.toggleIngredient(index)
-                        }
-                    }
+                IngredientBowlGrid(ingredients: recipe.ingredients, checked: session.checkedIngredients) {
+                    session.toggleIngredient($0)
                 }
+                .padding(.top, 4)
             }
         }
         .padding(16)
@@ -137,57 +134,16 @@ private struct OverviewSlide: View {
     }
 }
 
-private struct IngredientRow: View {
-    let text: String
-    let checked: Bool
-    let toggle: () -> Void
-
-    var body: some View {
-        Button(action: toggle) {
-            HStack(spacing: 10) {
-                Image(systemName: checked ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(checked ? Theme.basil : .secondary)
-                Text(text)
-                    .strikethrough(checked)
-                    .foregroundStyle(checked ? .secondary : .primary)
-                    .multilineTextAlignment(.leading)
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .animation(.snappy, value: checked)
-        .accessibilityValue(checked ? "checked" : "not checked")
-        .accessibilityHint("Double tap to \(checked ? "uncheck" : "check")")
-    }
-}
-
-/// Picture (or a quiet symbol), title over a gradient, "Step n of m".
+/// The step's scene (vessel and ingredients), title over a gradient, "Step n of m".
 private struct StepSlide: View {
     let step: RecipeStep
     let index: Int
     let count: Int
-    let image: UIImage?
+    var isActive = true
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            // The picture goes in an overlay so a fill-mode image never changes the slide's size.
-            Rectangle()
-                .fill(Theme.castIron)
-                .overlay {
-                    if let image {
-                        Image(uiImage: image).resizable().scaledToFill()
-                            .transition(.opacity)
-                    } else {
-                        Image(systemName: symbol)
-                            .font(.system(size: 64, weight: .light))
-                            .foregroundStyle(Theme.basil)
-                    }
-                }
-                .clipped()
-                .animation(.easeInOut, value: image != nil)
+            StepSceneView(step: step, isActive: isActive)
 
             LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
 
@@ -206,17 +162,6 @@ private struct StepSlide: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Step \(index + 1) of \(count), \(step.title)")
-    }
-
-    private var symbol: String {
-        let text = (step.title + " " + step.instruction).lowercased()
-        switch true {
-        case text.contains("bake") || text.contains("oven"):    return "oven"
-        case text.contains("boil") || text.contains("simmer"):  return "flame"
-        case text.contains("chop") || text.contains("slice") || text.contains("prep"): return "carrot"
-        case text.contains("serve") || text.contains("plate"):  return "fork.knife"
-        default:                                                return "frying.pan"
-        }
     }
 }
 

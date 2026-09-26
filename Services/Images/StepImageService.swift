@@ -1,13 +1,12 @@
 import UIKit
 
-/// What `CookSession.live()` should use: `images: StepImages.live()`.
+/// The slides draw their own scenes from the bundled Kitchen art (see `KitchenAssets`, `StepSceneView`),
+/// so the default path generates nothing. `RemoteImageProvider` and `StepImageService` stay available for an
+/// AI-picture experiment: `StepImageService(generator: RemoteImageProvider.fromInfoPlist()!)`.
 enum StepImages {
-    /// Cached, concurrent AI pictures when an API key is configured in Info.plist; otherwise the stub,
-    /// so every slide keeps its placeholder.
     @MainActor
     static func live() -> any StepImageProvider {
-        guard let generator = RemoteImageProvider.fromInfoPlist() else { return NoStepImages() }
-        return StepImageService(generator: generator)
+        NoStepImages()
     }
 }
 

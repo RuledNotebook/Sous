@@ -98,6 +98,10 @@ struct InputFormView: View {
                     HStack(spacing: 10) { buttons }
                     VStack(spacing: 10) { buttons }
                 }
+
+                Text("Ingredient art: Microsoft Fluent Emoji, MIT license.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
             .padding()
         }
