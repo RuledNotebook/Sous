@@ -82,13 +82,13 @@ builds watch/thumbnail URLs.
 
 ## Build and run in Bitrig
 
-On the Mac, choose **File → Open Folder…** in Bitrig and select this repository folder
-while the `design/duo-kitchen-ui` branch is checked out. Bitrig also offers
-**File → Add GitHub Repository…** for importing the pushed branch. Open the `CookAlong`
-Xcode project and scheme,
-select the iPhone Duo simulator with the iOS 27.1 runtime, then build and run. The **Demo**
-button is the quickest check of the layout and needs no keys. Try closed, open and rotated
-poses in Bitrig's Duo simulator.
+On the Mac, check out `design/duo-kitchen-ui`, then choose **File → Open Folder…** in
+Bitrig and select this repository folder. Bitrig detects the `CookAlong` Xcode project
+and builds it for its built-in simulator. Select **iPhone Duo** and use the **Fold**
+controls to try closed and open poses; rotate the simulator to check the landscape
+layout. The **Demo** button is the quickest check and needs no keys. After this branch
+has been pushed to a repository you can access, **File → Add GitHub Repository…** is
+another way to import it.
 
 To try a real YouTube link, copy `Config/Secrets.xcconfig.example` to the ignored
 `Config/Secrets.xcconfig` and enter your own keys. The usual path is `OPENAI_API_KEY` for
