@@ -8,7 +8,8 @@ import SwiftUI
 ///   -autoDemoSlide 3       then jump to slide 3 (0 = ingredients, 1…n = steps, n+1 = done)
 ///   -autoDemoTimer YES     then start the step timer
 ///   -autoLink <url>        paste this YouTube link and press Make slideshow; the outcome (slide
-///                          titles or the error) is logged as COOKALONG-RESULT for `log show`
+///                          titles, instructions, or the error) is logged as COOKALONG-RESULT for `log show`
+///   -autoLinkSlide 3       after the link loads, jump to slide 3
 ///
 /// Combine with Apple's own `-UIPreferredContentSizeCategoryName UICTContentSizeCategoryXXL`
 /// to check Dynamic Type, and COOKALONG_SECONDS_PER_MINUTE=1 in the environment for fast timers.
@@ -39,7 +40,10 @@ struct DebugLaunchOptions: ViewModifier {
                 await session.makeSlideshow()
                 switch session.phase {
                 case .ready:
-                    let titles = session.steps.enumerated().map { "\($0 + 1). \($1.title) [\($1.startSecond)s, \($1.minutes) min]" }
+                    if let index = integer(forKey: "autoLinkSlide"), session.slides.indices.contains(index) {
+                        session.go(to: session.slides[index])
+                    }
+                    let titles = session.steps.enumerated().map { "\($0 + 1). \($1.title) [\($1.startSecond)s, \($1.minutes) min] — \($1.instruction)" }
                     NSLog("COOKALONG-RESULT ok: %@ | %@", session.recipe?.title ?? "", titles.joined(separator: " | "))
                 case .failed(let message):
                     NSLog("COOKALONG-RESULT failed: %@", message)

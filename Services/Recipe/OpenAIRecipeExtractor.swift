@@ -7,8 +7,9 @@ struct OpenAIRecipeExtractor: TranscriptRecipeExtractor {
     nonisolated static let modelPlistKey = "OPENAI_MODEL"
     nonisolated static let defaultModel = "gpt-5-mini"
     nonisolated static let endpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
-    /// Keep the prompt well inside the context; a 30 minute video is ~5k words.
-    nonisolated static let maxTranscriptCharacters = 60_000
+    /// gpt-5-mini reads 400k tokens; this keeps even a three-hour video whole. Above it, every
+    /// other line is dropped and the model report says THINNED.
+    nonisolated static let maxTranscriptCharacters = 400_000
 
     var apiKey: String
     var model = defaultModel
@@ -32,6 +33,8 @@ struct OpenAIRecipeExtractor: TranscriptRecipeExtractor {
 
     var isAvailable: Bool { true }
     var unavailableReason: String? { nil }
+    var modelName: String { "OpenAI \(model)" }
+    func charactersSent(for transcript: [TranscriptLine]) -> Int { Self.thinned(transcript).joined(separator: "\n").count }
 
     func recipe(from transcript: [TranscriptLine], videoDuration: Double, video: VideoMetadata?) async throws -> Recipe {
         guard !transcript.isEmpty else { throw RecipeAnalysisError.emptyTranscript }
@@ -80,14 +83,17 @@ struct OpenAIRecipeExtractor: TranscriptRecipeExtractor {
         You turn the transcript of a cooking video into a recipe a home cook can follow on a phone \
         propped up in the kitchen. Each transcript line starts with the second it was spoken, like [42s]. \
         Merge chatter into real cooking steps, in the order they happen; 5 to 12 steps is typical. For each \
-        step give: a 2 to 5 word title starting with a verb; one or two clear sentences; startSecond copied \
+        step give: a 2 to 5 word title starting with a verb; an instruction that is ONE plain imperative \
+        sentence of at most 15 words, the single thing to do right now, readable from across a kitchen \
+        (quantities, temperatures and times belong in it; explanations do not); startSecond copied \
         from the transcript line where the step begins; minutes of real kitchen time (not video time; \
         estimate when the video skips ahead); isHandsOn (true for chopping and stirring, false for boiling, \
-        baking, resting); needsTimer (true when the cook should set a countdown); one short practical tip \
-        or an empty string; and an imagePrompt describing the finished state of the step for an image \
+        baking, resting); needsTimer (true when the cook should set a countdown); one practical tip of at \
+        most 12 words, or an empty string; and an imagePrompt describing the finished state of the step for an image \
         generator, no people, no text. Also give the dish title, servings, difficulty (easy, medium or hard), \
         the ingredient list with amounts when mentioned, and durationSeconds (the video length, 0 if unknown). \
         Answer only with JSON matching the schema.
+        \(IngredientGrounding.promptRule)
         """
 
     nonisolated static func userPrompt(transcript: [TranscriptLine], videoDuration: Double, video: VideoMetadata?) -> String {
@@ -98,12 +104,17 @@ struct OpenAIRecipeExtractor: TranscriptRecipeExtractor {
         }
         if videoDuration > 0 { lines.append("Video length: \(Int(videoDuration)) seconds") }
         lines.append("Transcript:")
+        return (lines + thinned(transcript)).joined(separator: "\n")
+    }
+
+    /// The rendered lines that go in the prompt. Only above `maxTranscriptCharacters` does this
+    /// drop every other line, so the whole video stays covered.
+    nonisolated static func thinned(_ transcript: [TranscriptLine]) -> [String] {
         var rendered = transcript.map { "[\(Int($0.start))s] \($0.text)" }
-        // Too long: drop every other line until it fits, so the whole video stays covered.
         while rendered.joined(separator: "\n").count > maxTranscriptCharacters, rendered.count > 20 {
             rendered = rendered.enumerated().filter { $0.offset.isMultiple(of: 2) }.map(\.element)
         }
-        return (lines + rendered).joined(separator: "\n")
+        return rendered
     }
 
     /// Strict structured-output schema: every property required, no extras.
@@ -121,11 +132,17 @@ struct OpenAIRecipeExtractor: TranscriptRecipeExtractor {
             "tip": ["type": "string"],
             "imagePrompt": ["type": "string"],
         ])
+        let ingredient = object([
+            "name": ["type": "string"],
+            "amount": ["type": "string", "description": "As said, e.g. '6 tablespoons'; empty string if no amount is said"],
+            "evidence": ["type": "string", "description": "The exact transcript words that name this ingredient, copied word-for-word"],
+            "second": ["type": "number", "description": "Timestamp of the transcript line the evidence is on"],
+        ])
         return object([
             "title": ["type": "string"],
             "servings": ["type": "integer"],
             "difficulty": ["type": "string", "enum": ["easy", "medium", "hard"]],
-            "ingredients": ["type": "array", "items": ["type": "string"]],
+            "ingredients": ["type": "array", "items": ingredient],
             "durationSeconds": ["type": "number"],
             "steps": ["type": "array", "items": step],
         ])
@@ -161,11 +178,11 @@ struct OpenAIRecipeExtractor: TranscriptRecipeExtractor {
         guard let text = choice.message.content, !text.isEmpty else {
             throw RecipeSourceError.cloud("OpenAI returned no text")
         }
-        let payload: GeminiVideoRecipeExtractor.Payload
-        do { payload = try JSONDecoder().decode(GeminiVideoRecipeExtractor.Payload.self, from: Data(CloudRecipeAnalyzer.stripFences(text).utf8)) }
+        let payload: GroundedRecipePayload
+        do { payload = try JSONDecoder().decode(GroundedRecipePayload.self, from: Data(CloudRecipeAnalyzer.stripFences(text).utf8)) }
         catch { throw RecipeSourceError.cloud("recipe JSON didn't match the schema: \(error.localizedDescription)") }
         guard !payload.steps.isEmpty else { throw RecipeAnalysisError.noStepsFound }
-        return GeminiVideoRecipeExtractor.recipe(from: payload)
+        return payload.recipe()
     }
 
     nonisolated private static func errorMessage(from data: Data) -> String {

@@ -172,26 +172,35 @@ private struct StepSlide: View {
         ZStack(alignment: .bottomLeading) {
             StepSceneView(step: step, isActive: isActive)
 
-            LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
+            LinearGradient(colors: [.clear, .black.opacity(0.55), .black.opacity(0.85)],
+                           startPoint: UnitPoint(x: 0.5, y: 0.3), endPoint: .bottom)
 
             heading
                 .padding(16)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Step \(index + 1) of \(count), \(step.title)")
+        .accessibilityLabel("Step \(index + 1) of \(count), \(step.title). \(step.instruction)")
     }
 
+    /// Step number, title, and the one thing to do now, so the slide alone is enough to cook from.
     private var heading: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Step \(index + 1) of \(count)")
                 .font(.caption.weight(.semibold))
                 .textCase(.uppercase)
+                .opacity(0.85)
             Text(step.title)
                 .font(.title.weight(.bold))
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
+            Text(step.instruction)
+                .font(.title3)
+                .lineLimit(3)
+                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(.white)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
