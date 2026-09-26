@@ -45,6 +45,14 @@ struct BowlView: View {
         .frame(width: width, height: width * 0.9, alignment: .bottom)
         .accessibilityHidden(true)
     }
+
+    /// Vertical offset of the ingredient's centre from the bowl view's centre (it sits above the rim).
+    static func ingredientOffset(width: CGFloat) -> CGFloat {
+        let rim = width * 0.56
+        let frameHeight = width * 0.9
+        let imageBottom = frameHeight - rim * 0.42
+        return imageBottom - width * 0.3 - frameHeight / 2
+    }
 }
 
 /// The pot, pan, bowl, board, oven or plate a step happens in, drawn large.
@@ -93,28 +101,27 @@ struct VesselView: View {
     }
 }
 
-/// Step slide scene: warm background, the vessel in the middle (a generated picture of the pot of water
-/// or the empty pan when `SceneArtStore` has one, else the bundled art), the step's ingredients in bowls on
-/// an arc above it. When the slide becomes current the ingredients drop into the vessel one after another,
-/// each landing in a little puff; tap a bowl to drop that one, tap the vessel to see it all again.
+/// Step slide scene: warm background, the vessel in the middle (a generated picture when `SceneArtStore`
+/// has one, else the bundled art) and the step's ingredients in bowls on a symmetric arc above it.
+///
+/// Motion, in order, once the slide is current: the vessel settles in; the bowls rise into place from the
+/// middle outwards; then the ingredients go in one at a time, each along a smooth arc into the vessel's
+/// mouth, with a single ripple where it lands. Tap a bowl to send that one in, tap the vessel to replay.
 struct StepSceneView: View {
     let step: RecipeStep
     var isActive = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
     @State private var dropped: Set<Int> = []
-    @State private var puffs: [Puff] = []
+    @State private var ripples: [Ripple] = []
+    @State private var vesselPulse = false
     @State private var sequence: Task<Void, Never>?
     private let art = SceneArtStore.shared
 
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            let unit = min(w, h)
-            let vesselSize = unit * 0.42
-            let bowl = min(max(unit * 0.17, 44), 76)
+            let layout = SceneLayout(size: geo.size, count: min(step.sceneItems.count, 6), vessel: step.sceneVessel)
             let items = Array(step.sceneItems.prefix(6))
-            let center = CGPoint(x: w / 2, y: h * 0.52)
-            let landing = CGPoint(x: center.x, y: center.y - vesselSize * 0.12)
             let key = SceneArtKey(step: step)
             ZStack {
                 LinearGradient(colors: [KitchenStyle.warmTop, KitchenStyle.warmBottom], startPoint: .top, endPoint: .bottom)
@@ -124,61 +131,56 @@ struct StepSceneView: View {
                         Image(uiImage: picture)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: vesselSize * 1.25, height: vesselSize * 1.25)
-                            .shadow(color: KitchenStyle.shadow, radius: vesselSize * 0.06, y: vesselSize * 0.05)
+                            .frame(width: layout.vesselSize * 1.25, height: layout.vesselSize * 1.25)
+                            .shadow(color: KitchenStyle.shadow, radius: layout.vesselSize * 0.06, y: layout.vesselSize * 0.05)
                             .transition(.opacity)
                     } else {
-                        VesselView(vessel: step.sceneVessel, size: vesselSize)
+                        VesselView(vessel: step.sceneVessel, size: layout.vesselSize)
                     }
                 }
-                .position(center)
-                .scaleEffect(appeared ? 1 : 0.9)
+                .scaleEffect(vesselPulse ? 1.03 : 1)
+                .animation(.spring(duration: 0.35, bounce: 0.45), value: vesselPulse)
+                .position(layout.center)
+                .scaleEffect(appeared ? 1 : 0.94)
                 .opacity(appeared ? 1 : 0)
-                .animation(.spring(duration: 0.5, bounce: 0.2), value: appeared)
+                .animation(.smooth(duration: 0.45), value: appeared)
                 .animation(.easeInOut(duration: 0.35), value: art.images.count)
                 .contentShape(Circle().scale(0.8))
                 .onTapGesture { replay(items.count) }
                 .accessibilityHidden(true)
 
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    let home = Self.position(index: index, count: items.count, center: center,
-                                             radiusX: min(w * 0.38, vesselSize * 0.7 + bowl * 0.9),
-                                             radiusY: min(h * 0.3, vesselSize * 0.75))
-                    let isIn = dropped.contains(index)
-                    // The bowl stays on the arc (empty once its ingredient has gone in).
-                    BowlView(asset: nil, label: item.asset == nil ? item.label : nil, width: bowl)
+                    let home = layout.bowlCenter(index)
+                    let delay = layout.riseDelay(index)
+                    BowlView(asset: nil, label: item.asset == nil ? item.label : nil, width: layout.bowl)
                         .position(home)
-                        .offset(y: appeared ? 0 : -28)
+                        .offset(y: appeared ? 0 : 16)
                         .opacity(appeared ? 1 : 0)
-                        .animation(.spring(duration: 0.55, bounce: 0.25).delay(0.1 + Double(index) * 0.08), value: appeared)
+                        .animation(.spring(duration: 0.5, bounce: 0.15).delay(delay), value: appeared)
                         .onTapGesture { drop(index, of: items.count) }
-                    // The ingredient itself: in its bowl, then flying into the vessel.
                     if let asset = item.asset {
-                        Image(asset)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: bowl * 0.6, height: bowl * 0.6)
-                            .position(isIn ? landing : CGPoint(x: home.x, y: home.y - bowl * 0.14))
-                            .scaleEffect(isIn ? 0.25 : 1)
-                            .opacity(isIn ? 0 : (appeared ? 1 : 0))
-                            .animation(isIn ? .easeIn(duration: 0.55) : .spring(duration: 0.55, bounce: 0.25).delay(0.1 + Double(index) * 0.08),
-                                       value: isIn)
-                            .animation(.spring(duration: 0.55, bounce: 0.25).delay(0.1 + Double(index) * 0.08), value: appeared)
+                        FlyingIngredient(asset: asset, size: layout.bowl * 0.6,
+                                         from: layout.ingredientSlot(index), to: layout.landing(index),
+                                         flying: dropped.contains(index), vanishes: layout.swallows,
+                                         duration: reduceMotion ? 0.01 : 0.55)
+                            .offset(y: appeared ? 0 : 16)
+                            .opacity(appeared ? 1 : 0)
+                            .animation(.spring(duration: 0.5, bounce: 0.15).delay(delay), value: appeared)
                             .allowsHitTesting(false)
                     }
                 }
 
-                ForEach(puffs) { puff in
-                    PuffView(puff: puff).position(landing)
+                ForEach(ripples) { ripple in
+                    RippleView(kind: ripple.kind, width: layout.vesselSize * 0.42).position(layout.mouth)
                 }
             }
         }
         .clipped()
         .onChange(of: isActive, initial: true) { _, active in
             appeared = active
-            if active { replay(step.sceneItems.prefix(6).count) } else { sequence?.cancel(); dropped = []; puffs = [] }
+            if active { replay(step.sceneItems.prefix(6).count) } else { stop() }
         }
-        .onDisappear { sequence?.cancel() }
+        .onDisappear { stop() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(sceneLabel)
         .accessibilityAction(named: "Show the ingredients go in") { replay(step.sceneItems.prefix(6).count) }
@@ -189,91 +191,218 @@ struct StepSceneView: View {
         return names.isEmpty ? "\(step.sceneVessel.rawValue)" : "\(names.joined(separator: ", ")) into the \(step.sceneVessel.rawValue)"
     }
 
-    /// Everything back in its bowl, then in they go, one at a time.
-    private func replay(_ count: Int) {
+    private func stop() {
         sequence?.cancel()
+        sequence = nil
         dropped = []
-        puffs = []
+        ripples = []
+        vesselPulse = false
+    }
+
+    /// Everything back in its bowl, then in they go, left to right, one at a time.
+    private func replay(_ count: Int) {
+        stop()
         guard count > 0 else { return }
         sequence = Task {
-            try? await Task.sleep(for: .milliseconds(900))
+            try? await Task.sleep(for: .milliseconds(reduceMotion ? 300 : 950))
             for index in 0..<count {
                 guard !Task.isCancelled else { return }
                 drop(index, of: count)
-                try? await Task.sleep(for: .milliseconds(520))
+                try? await Task.sleep(for: .milliseconds(reduceMotion ? 250 : 650))
             }
         }
     }
 
     private func drop(_ index: Int, of count: Int) {
         guard !dropped.contains(index) else { return }
-        withAnimation { _ = dropped.insert(index) }
+        dropped.insert(index)
         let items = Array(step.sceneItems.prefix(6))
-        let kind = Puff.kind(for: items.indices.contains(index) ? items[index].asset : nil, in: step.sceneVessel)
-        let puff = Puff(kind: kind)
+        let ripple = Ripple(kind: Ripple.kind(for: items.indices.contains(index) ? items[index].asset : nil, in: step.sceneVessel))
         Task {
-            try? await Task.sleep(for: .milliseconds(420))   // when the ingredient reaches the rim
-            puffs.append(puff)
-            try? await Task.sleep(for: .milliseconds(900))
-            puffs.removeAll { $0.id == puff.id }
+            try? await Task.sleep(for: .milliseconds(reduceMotion ? 10 : 470))   // the ingredient reaches the mouth
+            guard !Task.isCancelled else { return }
+            ripples.append(ripple)
+            vesselPulse = true
+            try? await Task.sleep(for: .milliseconds(140))
+            vesselPulse = false
+            try? await Task.sleep(for: .milliseconds(600))
+            ripples.removeAll { $0.id == ripple.id }
         }
-    }
-
-    /// Bowls sit on a gentle arc over the top of the vessel, spread evenly from left to right.
-    static func position(index: Int, count: Int, center: CGPoint, radiusX: CGFloat, radiusY: CGFloat) -> CGPoint {
-        let start = 200.0, end = 340.0        // degrees in screen coordinates: the upper arc
-        let t = count <= 1 ? 0.5 : Double(index) / Double(count - 1)
-        let angle = (start + (end - start) * t) * .pi / 180
-        return CGPoint(x: center.x + radiusX * cos(angle), y: center.y + radiusY * sin(angle))
     }
 }
 
-/// A little burst where an ingredient lands: a splash for liquids, a sizzle over a pan, a dusting for powders.
-struct Puff: Identifiable, Equatable {
-    enum Kind { case splash, sizzle, powder }
+/// Where everything sits, computed once per slide size so every step looks like the same set.
+/// Bowls sit on an elliptical arc centred straight above the vessel, evenly spaced and mirrored.
+struct SceneLayout {
+    let size: CGSize
+    let count: Int
+    let vessel: Vessel
+    let vesselSize: CGFloat
+    let bowl: CGFloat
+    let center: CGPoint
+
+    init(size: CGSize, count: Int, vessel: Vessel) {
+        self.size = size
+        self.count = count
+        self.vessel = vessel
+        let unit = min(size.width, size.height)
+        vesselSize = unit * 0.40
+        bowl = min(max(unit * 0.16, 44), 72)
+        center = CGPoint(x: size.width / 2, y: size.height * 0.5)
+    }
+
+    /// Angular spacing between neighbouring bowls, in degrees; the arc never exceeds 150°.
+    private var spacing: Double { count <= 1 ? 0 : min(36, 150 / Double(count - 1)) }
+
+    private var radii: (x: CGFloat, y: CGFloat) {
+        var rx = vesselSize * 0.62 + bowl * 0.85
+        let ry = vesselSize * 0.55 + bowl * 0.6
+        // Keep the outermost bowls inside the slide with a small margin.
+        let halfSpan = CGFloat(sin(spacing * Double(count - 1) / 2 * .pi / 180))
+        if count > 1, rx * halfSpan > size.width / 2 - bowl / 2 - 10 {
+            rx = (size.width / 2 - bowl / 2 - 10) / halfSpan
+        }
+        return (rx, ry)
+    }
+
+    func bowlCenter(_ index: Int) -> CGPoint {
+        let offset = Double(index) - Double(count - 1) / 2
+        let angle = (270 + offset * spacing) * .pi / 180
+        let r = radii
+        let y = max(bowl * 0.5 + 10, center.y + r.y * CGFloat(sin(angle)))
+        return CGPoint(x: center.x + r.x * CGFloat(cos(angle)), y: y)
+    }
+
+    /// Where the ingredient rests inside its bowl (matches `BowlView`).
+    func ingredientSlot(_ index: Int) -> CGPoint {
+        let home = bowlCenter(index)
+        return CGPoint(x: home.x, y: home.y + BowlView.ingredientOffset(width: bowl))
+    }
+
+    /// The point an ingredient disappears into, per vessel.
+    var mouth: CGPoint {
+        let dy: CGFloat
+        switch vessel {
+        case .pot:   dy = -0.22
+        case .bowl:  dy = -0.12
+        case .pan:   dy = -0.05
+        case .board: dy = -0.05
+        case .plate: dy = 0
+        case .oven:  dy = 0.02
+        }
+        return CGPoint(x: center.x, y: center.y + vesselSize * dy)
+    }
+
+    /// Pots, pans, bowls and ovens swallow what goes in; plates and boards keep the food in view.
+    var swallows: Bool {
+        switch vessel {
+        case .pot, .pan, .bowl, .oven: true
+        case .plate, .board: false
+        }
+    }
+
+    /// Where an ingredient ends up: the mouth, or a small symmetric cluster on a plate or board.
+    func landing(_ index: Int) -> CGPoint {
+        guard !swallows, count > 1 else { return mouth }
+        let angle = (-90 + 360 * Double(index) / Double(count)) * .pi / 180
+        let r = vesselSize * (vessel == .plate ? 0.24 : 0.22)
+        return CGPoint(x: mouth.x + r * CGFloat(cos(angle)), y: mouth.y + r * 0.6 * CGFloat(sin(angle)))
+    }
+
+    /// Bowls rise in from the middle outwards, so the arc grows symmetrically.
+    func riseDelay(_ index: Int) -> Double {
+        0.15 + abs(Double(index) - Double(count - 1) / 2) * 0.07
+    }
+}
+
+/// An ingredient that rests in its bowl until `flying`, then travels along a smooth arc to its landing point,
+/// shrinking as it goes and, for vessels that swallow it, fading as it lands. Snaps back when `flying` turns off.
+struct FlyingIngredient: View {
+    let asset: String
+    let size: CGFloat
+    let from: CGPoint
+    let to: CGPoint
+    let flying: Bool
+    /// True: fades away as it lands (into a pot). False: stays on the plate at a smaller size.
+    var vanishes = true
+    var duration = 0.55
+
+    var body: some View {
+        // Anchored at the bowl; the flight is a relative offset so the animator's own size never matters.
+        KeyframeAnimator(initialValue: 0.0, trigger: flying) { t in
+            let point = Self.arc(from: from, to: to, t: t)
+            Image(asset)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .scaleEffect(1 - (vanishes ? 0.45 : 0.25) * t)
+                .opacity(vanishes && t > 0.85 ? max(0, 1 - (t - 0.85) / 0.15) : 1)
+                .offset(x: point.x - from.x, y: point.y - from.y)
+        } keyframes: { _ in
+            if flying {
+                CubicKeyframe(1.0, duration: duration)
+            } else {
+                LinearKeyframe(0.0, duration: 0.01)
+            }
+        }
+        .position(from)
+    }
+
+    /// Quadratic curve that lifts above both ends before dipping into the vessel.
+    static func arc(from a: CGPoint, to b: CGPoint, t: Double) -> CGPoint {
+        let lift = max(28, abs(b.x - a.x) * 0.35 + 18)
+        let control = CGPoint(x: (a.x + b.x) / 2, y: min(a.y, b.y) - lift)
+        let u = 1 - t
+        return CGPoint(x: u * u * a.x + 2 * u * t * control.x + t * t * b.x,
+                       y: u * u * a.y + 2 * u * t * control.y + t * t * b.y)
+    }
+}
+
+/// One clean ring where an ingredient lands: watery for pots and bowls, warm for pans and ovens,
+/// pale for boards and plates.
+struct Ripple: Identifiable, Equatable {
+    enum Kind { case splash, sizzle, dust }
     let id = UUID()
     let kind: Kind
 
     static func kind(for asset: String?, in vessel: Vessel) -> Kind {
-        if let asset, ["salt", "honey_pot", "herb", "sheaf_of_rice", "jar", "canned_food"].contains(asset) { return .powder }
+        if let asset, ["salt", "herb", "sheaf_of_rice", "jar", "canned_food"].contains(asset) { return .dust }
         switch vessel {
         case .pan, .oven: return .sizzle
         case .pot, .bowl: return .splash
-        case .board, .plate: return .powder
+        case .board, .plate: return .dust
         }
     }
 }
 
-struct PuffView: View {
-    let puff: Puff
+struct RippleView: View {
+    let kind: Ripple.Kind
+    let width: CGFloat
     @State private var t: CGFloat = 0
-    private let count = 9
 
     var body: some View {
         ZStack {
-            ForEach(0..<count, id: \.self) { i in
-                let angle = Double(i) / Double(count) * 2 * .pi + Double(puff.id.hashValue % 7) * 0.13
-                let distance: CGFloat = puff.kind == .powder ? 22 : 34
-                Circle()
-                    .fill(color)
-                    .frame(width: size(i), height: size(i))
-                    .offset(x: cos(angle) * distance * t, y: sin(angle) * distance * t * 0.6 - (puff.kind == .sizzle ? 18 * t : 6 * t))
-                    .opacity(Double(1 - t))
-                    .scaleEffect(1 + t * 0.6)
-            }
+            Ellipse()
+                .stroke(color, lineWidth: 2.5)
+                .frame(width: width, height: width * 0.42)
+                .scaleEffect(0.35 + 0.95 * t)
+                .opacity(Double(1 - t) * 0.8)
+            Ellipse()
+                .fill(color.opacity(0.35))
+                .frame(width: width * 0.6, height: width * 0.25)
+                .scaleEffect(0.4 + 0.5 * t)
+                .opacity(Double(1 - t) * 0.6)
         }
-        .onAppear { withAnimation(.easeOut(duration: 0.8)) { t = 1 } }
+        .onAppear { withAnimation(.easeOut(duration: 0.55)) { t = 1 } }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
-    private func size(_ i: Int) -> CGFloat { CGFloat(4 + (i % 3) * 2) }
-
     private var color: Color {
-        switch puff.kind {
-        case .splash: Color(red: 0.62, green: 0.82, blue: 0.95)
-        case .sizzle: Color(red: 0.98, green: 0.72, blue: 0.35)
-        case .powder: Color(white: 0.97)
+        switch kind {
+        case .splash: Color(red: 0.55, green: 0.78, blue: 0.95)
+        case .sizzle: Color(red: 0.98, green: 0.70, blue: 0.32)
+        case .dust:   Color(white: 0.98)
         }
     }
 }
