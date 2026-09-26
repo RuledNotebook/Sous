@@ -8,6 +8,8 @@ struct OnDeviceTranscriptExtractor: TranscriptRecipeExtractor {
 
     var isAvailable: Bool { OnDeviceRecipeAnalyzer.isAvailable }
     var unavailableReason: String? { OnDeviceRecipeAnalyzer.unavailableReason }
+    var modelName: String { "on-device Apple Intelligence (chunked, ~3k chars per window)" }
+    var runsOnDevice: Bool { true }
 
     func recipe(from transcript: [TranscriptLine], videoDuration: Double, video: VideoMetadata?) async throws -> Recipe {
         let title = video.map { $0.title == "YouTube video" ? nil : $0.title } ?? nil

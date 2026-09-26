@@ -5,7 +5,7 @@ import Foundation
 /// model repeats what it read.
 nonisolated enum CaptionFixes {
     static let replacements: [(heard: String, meant: String)] = [
-        ("gacha jang", "gochujang"), ("gotcha jang", "gochujang"), ("gochu jang", "gochujang"), ("kochujang", "gochujang"),
+        ("gacha jang", "gochujang"), ("gcha jang", "gochujang"), ("gotcha jang", "gochujang"), ("gochu jang", "gochujang"), ("kochujang", "gochujang"),
         ("go chu jang", "gochujang"), ("dwenjang", "doenjang"), ("den jang", "doenjang"),
         ("the walk", "the wok"), ("a walk", "a wok"), ("my walk", "my wok"), ("your walk", "your wok"),
         ("heat walk", "heat wok"), ("hot walk", "hot wok"), ("walk heating", "wok heating"), ("in walk", "in wok"),

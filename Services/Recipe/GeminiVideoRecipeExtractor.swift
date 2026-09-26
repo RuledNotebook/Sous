@@ -110,6 +110,7 @@ struct GeminiVideoRecipeExtractor: VideoRecipeExtractor {
         steps. Skip greetings, stories, sponsor segments and goodbyes. Step titles are 2 to 5 words \
         starting with a verb; instructions are one or two clear sentences with the amounts. Ingredients list every ingredient once with the \
         amount shown or spoken, e.g. "2 chicken breasts, cubed".
+        \(IngredientGrounding.promptRule) Evidence is what you hear the cook say.
         """
 
     nonisolated static func prompt(for video: VideoMetadata) -> String {
@@ -144,7 +145,12 @@ struct GeminiVideoRecipeExtractor: VideoRecipeExtractor {
             ("title", ["type": "STRING", "description": "Short name of the dish"]),
             ("servings", ["type": "INTEGER", "description": "1 to 12"]),
             ("difficulty", ["type": "STRING", "enum": ["easy", "medium", "hard"]]),
-            ("ingredients", ["type": "ARRAY", "items": ["type": "STRING"]]),
+            ("ingredients", ["type": "ARRAY", "items": object([
+                ("name", ["type": "STRING"]),
+                ("amount", ["type": "STRING", "description": "As said, empty if none"]),
+                ("evidence", ["type": "STRING", "description": "The cook's exact words naming this ingredient"]),
+                ("second", ["type": "INTEGER", "description": "When those words are said"]),
+            ])]),
             ("durationSeconds", ["type": "INTEGER", "description": "Total length of the video in seconds"]),
             ("steps", ["type": "ARRAY", "items": step]),
         ])
@@ -171,24 +177,7 @@ struct GeminiVideoRecipeExtractor: VideoRecipeExtractor {
         let error: Inner
     }
 
-    nonisolated struct Payload: Decodable {
-        struct Step: Decodable {
-            let title: String
-            let instruction: String
-            let startSecond: Double
-            let minutes: Int
-            let isHandsOn: Bool
-            let needsTimer: Bool
-            let tip: String?
-            let imagePrompt: String?
-        }
-        let title: String
-        let servings: Int
-        let difficulty: String
-        let ingredients: [String]
-        let durationSeconds: Double?
-        let steps: [Step]
-    }
+    typealias Payload = GroundedRecipePayload
 
     /// Turns a generateContent response into a Recipe, with the shared clamp/minutes sanity pass.
     static func parseRecipe(from data: Data) throws -> Recipe {
@@ -218,21 +207,7 @@ struct GeminiVideoRecipeExtractor: VideoRecipeExtractor {
         return recipe(from: payload)
     }
 
-    static func recipe(from payload: Payload) -> Recipe {
-        let candidates = payload.steps.enumerated().map { order, s in
-            StepCandidate(title: s.title, instruction: s.instruction, startSecond: s.startSecond,
-                          minutes: s.minutes, isHandsOn: s.isHandsOn, needsTimer: s.needsTimer,
-                          tip: s.tip ?? "", imagePrompt: s.imagePrompt ?? "", order: order)
-        }
-        let ordered = candidates.sorted { ($0.startSecond, $0.order) < ($1.startSecond, $1.order) }
-        let steps = ChunkedRecipePipeline.finalize(ordered, videoDuration: payload.durationSeconds ?? 0)
-        return Recipe(title: payload.title.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "Recipe from video",
-                      servings: (1...12).contains(payload.servings) ? payload.servings : 4,
-                      difficulty: ["easy", "medium", "hard"].contains(payload.difficulty) ? payload.difficulty
-                                  : ChunkedRecipePipeline.difficulty(for: steps),
-                      ingredients: ChunkedRecipePipeline.dedupeIngredients(payload.ingredients),
-                      steps: steps)
-    }
+    static func recipe(from payload: Payload) -> Recipe { payload.recipe() }
 
     nonisolated private static func errorMessage(from data: Data) -> String {
         if let env = try? JSONDecoder().decode(ErrorEnvelope.self, from: data) {

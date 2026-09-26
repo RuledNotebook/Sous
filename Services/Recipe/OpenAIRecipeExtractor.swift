@@ -92,7 +92,9 @@ struct OpenAIRecipeExtractor: TranscriptRecipeExtractor {
         most 12 words, or an empty string; and an imagePrompt describing the finished state of the step for an image \
         generator, no people, no text. Also give the dish title, servings, difficulty (easy, medium or hard), \
         the ingredient list with amounts when mentioned, and durationSeconds (the video length, 0 if unknown). \
-        Answer only with JSON matching the schema.
+        For each step also give vessel (where it happens: pot, pan, bowl, board, oven or plate) and items \
+        (the ingredients used in that step, as asset names chosen only from this list: \
+        \(KitchenAssets.promptList.joined(separator: ", "))). Answer only with JSON matching the schema.
         \(IngredientGrounding.promptRule)
         """
 
@@ -131,6 +133,8 @@ struct OpenAIRecipeExtractor: TranscriptRecipeExtractor {
             "needsTimer": ["type": "boolean"],
             "tip": ["type": "string"],
             "imagePrompt": ["type": "string"],
+            "vessel": ["type": "string", "enum": ["pot", "pan", "bowl", "board", "oven", "plate"]],
+            "items": ["type": "array", "items": ["type": "string"], "description": "Asset names from the list in the instructions"],
         ])
         let ingredient = object([
             "name": ["type": "string"],

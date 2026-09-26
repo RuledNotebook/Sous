@@ -102,7 +102,12 @@ struct CloudRecipeAnalyzer: RecipeAnalyzer {
             "title": ["type": "string", "description": "Short name of the dish"],
             "servings": ["type": "integer", "description": "How many people it serves, 1 to 12"],
             "difficulty": ["type": "string", "enum": ["easy", "medium", "hard"]],
-            "ingredients": ["type": "array", "items": ["type": "string"]],
+            "ingredients": ["type": "array", "items": object([
+                "name": ["type": "string"],
+                "amount": ["type": "string", "description": "As said; empty string if no amount is said"],
+                "evidence": ["type": "string", "description": "The exact transcript words that name this ingredient"],
+                "second": ["type": "integer", "description": "Timestamp of the transcript line the evidence is on"],
+            ])],
             "steps": ["type": "array", "items": step],
         ])
     }
@@ -120,23 +125,7 @@ struct CloudRecipeAnalyzer: RecipeAnalyzer {
         let error: Inner
     }
 
-    nonisolated struct Payload: Decodable {
-        struct Step: Decodable {
-            let title: String
-            let instruction: String
-            let startSecond: Double
-            let minutes: Int
-            let isHandsOn: Bool
-            let needsTimer: Bool
-            let tip: String?
-            let imagePrompt: String?
-        }
-        let title: String
-        let servings: Int
-        let difficulty: String
-        let ingredients: [String]
-        let steps: [Step]
-    }
+    typealias Payload = GroundedRecipePayload
 
     /// Turns a Messages API response into a Recipe, applying the same timestamp clamping and
     /// minute sanity checks as the on-device path. Pure, so it is unit-tested with canned JSON.
@@ -156,22 +145,7 @@ struct CloudRecipeAnalyzer: RecipeAnalyzer {
         return recipe(from: payload, videoDuration: videoDuration)
     }
 
-    static func recipe(from payload: Payload, videoDuration: Double) -> Recipe {
-        let candidates = payload.steps.enumerated().map { order, s in
-            StepCandidate(title: s.title, instruction: s.instruction, startSecond: s.startSecond,
-                          minutes: s.minutes, isHandsOn: s.isHandsOn, needsTimer: s.needsTimer,
-                          tip: s.tip ?? "", imagePrompt: s.imagePrompt ?? "", order: order)
-        }
-        // Single window, so nothing to dedupe; keep video order and apply the shared sanity pass.
-        let ordered = candidates.sorted { ($0.startSecond, $0.order) < ($1.startSecond, $1.order) }
-        let steps = ChunkedRecipePipeline.finalize(ordered, videoDuration: videoDuration)
-        return Recipe(title: payload.title,
-                      servings: (1...12).contains(payload.servings) ? payload.servings : 4,
-                      difficulty: ["easy", "medium", "hard"].contains(payload.difficulty) ? payload.difficulty
-                                  : ChunkedRecipePipeline.difficulty(for: steps),
-                      ingredients: ChunkedRecipePipeline.dedupeIngredients(payload.ingredients),
-                      steps: steps)
-    }
+    static func recipe(from payload: Payload, videoDuration: Double) -> Recipe { payload.recipe(videoDuration: videoDuration) }
 
     /// Structured outputs return bare JSON; strip a ```json fence anyway in case a model adds one.
     nonisolated static func stripFences(_ text: String) -> String {
