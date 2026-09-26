@@ -1,0 +1,22 @@
+// Base configuration for the CookAlong target (committed).
+// Every key below defaults to empty, which the app treats as "not configured".
+// Put real values in Config/Secrets.xcconfig (gitignored, see Secrets.xcconfig.example);
+// it is included last, so anything it sets wins.
+
+// Transcript fetching (Services/Recipe)
+SUPADATA_API_KEY =
+
+// Recipe / slideshow generation (Services/Recipe)
+OPENAI_API_KEY =
+OPENAI_MODEL =
+ANTHROPIC_API_KEY =
+GEMINI_API_KEY =
+GEMINI_MODEL =
+
+// Step pictures (Services/Images): any OpenAI-style images endpoint, or Gemini
+IMAGE_API_URL =
+IMAGE_API_KEY =
+IMAGE_API_MODEL =
+GEMINI_IMAGE_MODEL =
+
+#include? "Secrets.xcconfig"

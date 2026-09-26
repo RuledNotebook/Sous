@@ -7,17 +7,28 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Hears voice commands like "next", "back" and "start timer" so you can cook with messy hands.</string>
 	<!--
-	Optional keys the service sessions may read with Bundle.main.infoDictionary.
-	Hackathon only: never ship a key inside an app.
-
-	<key>ANTHROPIC_API_KEY</key>
-	<string></string>
-	<key>IMAGE_API_URL</key>
-	<string></string>
-	<key>IMAGE_API_KEY</key>
-	<string></string>
-	<key>IMAGE_API_MODEL</key>
-	<string></string>
+	API keys come from Config/Secrets.xcconfig (gitignored) through the $(…) build settings below.
+	Empty means "not configured" to every service. Never put a real key in this file.
 	-->
+	<key>SUPADATA_API_KEY</key>
+	<string>$(SUPADATA_API_KEY)</string>
+	<key>OPENAI_API_KEY</key>
+	<string>$(OPENAI_API_KEY)</string>
+	<key>OPENAI_MODEL</key>
+	<string>$(OPENAI_MODEL)</string>
+	<key>ANTHROPIC_API_KEY</key>
+	<string>$(ANTHROPIC_API_KEY)</string>
+	<key>GEMINI_API_KEY</key>
+	<string>$(GEMINI_API_KEY)</string>
+	<key>GEMINI_MODEL</key>
+	<string>$(GEMINI_MODEL)</string>
+	<key>GEMINI_IMAGE_MODEL</key>
+	<string>$(GEMINI_IMAGE_MODEL)</string>
+	<key>IMAGE_API_URL</key>
+	<string>$(IMAGE_API_URL)</string>
+	<key>IMAGE_API_KEY</key>
+	<string>$(IMAGE_API_KEY)</string>
+	<key>IMAGE_API_MODEL</key>
+	<string>$(IMAGE_API_MODEL)</string>
 </dict>
 </plist>

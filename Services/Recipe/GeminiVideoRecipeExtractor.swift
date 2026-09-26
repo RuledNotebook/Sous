@@ -55,7 +55,11 @@ struct GeminiVideoRecipeExtractor: VideoRecipeExtractor {
         guard status == 200 else {
             throw RecipeSourceError.cloud("HTTP \(status): \(Self.errorMessage(from: data))")
         }
-        return try Self.parseRecipe(from: data)
+        var recipe = try Self.parseRecipe(from: data)
+        if let promised = TotalTimeHint.minutes(in: video.title) {
+            recipe.steps = TotalTimeHint.fit(recipe.steps, to: promised)
+        }
+        return recipe
     }
 
     func makeRequest(for video: VideoMetadata) throws -> URLRequest {
@@ -101,9 +105,10 @@ struct GeminiVideoRecipeExtractor: VideoRecipeExtractor {
         otherwise estimate what a home cook needs (dice an onion 3 min, bring a pot to the boil 8 min). \
         isHandsOn is false while waiting; needsTimer is true for any wait of a minute or more.
 
-        Merge chatter and repeats into real steps, in the order they happen. Skip intros, sponsor \
-        segments and outros. Step titles are 2 to 5 words starting with a verb; instructions are one \
-        or two clear sentences with the amounts. Ingredients list every ingredient once with the \
+        Merge chatter and repeats into real steps, in the order they happen; combine small \
+        consecutive additions (several seasonings into one pan) into one step, aiming for 6 to 14 \
+        steps. Skip greetings, stories, sponsor segments and goodbyes. Step titles are 2 to 5 words \
+        starting with a verb; instructions are one or two clear sentences with the amounts. Ingredients list every ingredient once with the \
         amount shown or spoken, e.g. "2 chicken breasts, cubed".
         """
 

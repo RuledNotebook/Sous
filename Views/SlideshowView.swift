@@ -80,7 +80,7 @@ private struct SlideView: View {
             case .step(let index):
                 if recipe.steps.indices.contains(index) {
                     let step = recipe.steps[index]
-                    StepSlide(step: step, index: index, count: recipe.steps.count, image: session.stepImages[step.id])
+                    StepSlide(step: step, index: index, count: recipe.steps.count, isActive: session.slide == slide)
                 }
             case .done:
                 DoneSlide(recipe: recipe)
@@ -122,13 +122,10 @@ private struct OverviewSlide: View {
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(recipe.ingredients.enumerated()), id: \.offset) { index, ingredient in
-                        IngredientRow(text: ingredient, checked: session.checkedIngredients.contains(index)) {
-                            session.toggleIngredient(index)
-                        }
-                    }
+                IngredientBowlGrid(ingredients: recipe.ingredients, checked: session.checkedIngredients) {
+                    session.toggleIngredient($0)
                 }
+                .padding(.top, 4)
             }
         }
         .padding(16)
@@ -164,45 +161,27 @@ struct IngredientRow: View {
     }
 }
 
-/// Picture (or a quiet symbol), title over a gradient, "Step n of m".
+/// The step's scene (vessel and ingredients), title over a gradient, "Step n of m".
 private struct StepSlide: View {
     let step: RecipeStep
     let index: Int
     let count: Int
-    let image: UIImage?
+    var isActive = true
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            if let image {
-                // The picture goes in an overlay so fill mode never changes the slide's size.
-                Rectangle()
-                    .fill(Theme.castIron)
-                    .overlay {
-                        Image(uiImage: image).resizable().scaledToFill()
-                    }
-                    .clipped()
-                LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
-                heading(color: .white)
-                    .padding(16)
-            } else {
-                Theme.card
-                VStack(alignment: .leading) {
-                    Spacer(minLength: 0)
-                    Image(systemName: symbol)
-                        .font(.system(size: 56, weight: .light))
-                        .foregroundStyle(Theme.accent)
-                        .frame(maxWidth: .infinity)
-                    Spacer(minLength: 0)
-                    heading(color: .primary)
-                }
+            StepSceneView(step: step, isActive: isActive)
+
+            LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
+
+            heading
                 .padding(16)
-            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Step \(index + 1) of \(count), \(step.title)")
     }
 
-    private func heading(color: Color) -> some View {
+    private var heading: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Step \(index + 1) of \(count)")
                 .font(.caption.weight(.semibold))
@@ -212,18 +191,7 @@ private struct StepSlide: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
         }
-        .foregroundStyle(color)
-    }
-
-    private var symbol: String {
-        let text = (step.title + " " + step.instruction).lowercased()
-        switch true {
-        case text.contains("bake") || text.contains("oven"):    return "oven"
-        case text.contains("boil") || text.contains("simmer"):  return "flame"
-        case text.contains("chop") || text.contains("slice") || text.contains("prep"): return "carrot"
-        case text.contains("serve") || text.contains("plate"):  return "fork.knife"
-        default:                                                return "frying.pan"
-        }
+        .foregroundStyle(.white)
     }
 }
 
@@ -304,6 +272,7 @@ struct SlideshowBar: View {
     @Environment(CookSession.self) private var session
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var compact = false
+    var onShowVideo: (() -> Void)? = nil
 
     var body: some View {
         @Bindable var session = session
@@ -361,6 +330,14 @@ struct SlideshowBar: View {
                 if !compact || session.voiceEnabled {
                     Spacer(minLength: 8)
                     VoiceStatusBar()
+                }
+                if let onShowVideo, session.recipe?.videoID != nil {
+                    Spacer(minLength: 8)
+                    Button(action: onShowVideo) {
+                        Image(systemName: "play.rectangle")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("Show cooking video")
                 }
             }
             .font(.caption)

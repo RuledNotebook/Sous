@@ -47,6 +47,13 @@ nonisolated struct RecipeStep: Identifiable, Hashable, Codable, Sendable {
     var needsTimer: Bool
     var tip: String
     var imagePrompt: String     // fed to the image generator
+    var vessel: Vessel?         // where the step happens, if the model said; see RecipeStep.sceneVessel
+    var items: [String]?        // Kitchen asset names the model picked; see RecipeStep.sceneItems
+}
+
+/// Where a step happens. Drawn large in the middle of the step slide.
+nonisolated enum Vessel: String, Codable, Sendable, CaseIterable {
+    case pot, pan, bowl, board, oven, plate
 }
 
 // MARK: - Demo data (reliable on stage, no model/network needed)

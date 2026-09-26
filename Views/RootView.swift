@@ -3,16 +3,11 @@ import SwiftUI
 /// Adapts to the container, never to UIScreen (on iPhone Duo, UIScreen.main
 /// reports the outer display even while the app runs on the inner one).
 ///
-///  Closed (466x678)          Open, rotated (669x951)       Open (951x669)
-///  ┌───────────────┐         ┌───────────────┐             ┌─────────────┬─────────────┐
-///  │ cooking detail│         │    details    │             │   details   │  slideshow  │
-///  │   (scrolls)   │         ├──── hinge ────┤             └────────── hinge ──────────┘
-///  │   controls    │         │   slideshow   │
-///  └───────────────┘         └───────────────┘
-/// The inner display splits at its physical centre. The outer display has no hinge,
-/// so the instructions get the full height and navigation stays at the bottom.
+/// Closed: one cooking panel with a video sheet. Open: video and details share
+/// one side of the hinge, while the slideshow occupies the other side.
 struct RootView: View {
     @Environment(CookSession.self) private var session
+    @State private var showVideo = false
 
     var body: some View {
         GeometryReader { geo in
@@ -23,7 +18,7 @@ struct RootView: View {
                         DetailsPanelView(compact: true)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         if session.phase == .ready {
-                            SlideshowBar(compact: true)
+                            SlideshowBar(compact: true, onShowVideo: { showVideo = true })
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 10)
                                 .background(Theme.card)
@@ -31,19 +26,27 @@ struct RootView: View {
                     }
                 } else if plan.isWide {
                     HStack(spacing: 0) {
-                        DetailsPanelView()
-                            .frame(width: plan.leadingPanelLength)
-                            .overlay(alignment: .trailing) { Seam(.vertical) }
+                        VStack(spacing: 0) {
+                            VideoPanelView()
+                            DetailsPanelView()
+                                .frame(maxHeight: .infinity)
+                        }
+                        .frame(width: plan.leadingPanelLength)
+                        .overlay(alignment: .trailing) { Seam(.vertical) }
                         SlideshowView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
                     VStack(spacing: 0) {
-                        DetailsPanelView()
-                            .frame(height: plan.leadingPanelLength)
-                            .overlay(alignment: .bottom) { Seam(.horizontal) }
+                        VStack(spacing: 0) {
+                            VideoPanelView()
+                            DetailsPanelView()
+                                .frame(maxHeight: .infinity)
+                        }
+                        .frame(height: plan.leadingPanelLength)
+                        .overlay(alignment: .bottom) { Seam(.horizontal) }
                         SlideshowView()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(maxHeight: .infinity)
                     }
                 }
             }
@@ -51,6 +54,11 @@ struct RootView: View {
         }
         .background(Theme.canvas)
         .tint(Theme.accent)
+        .sheet(isPresented: $showVideo) {
+            VideoPanelView()
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
     }
 }
 
@@ -60,7 +68,7 @@ struct LayoutPlan: Equatable {
     let usesTwoPanels: Bool
     /// Full display size, safe-area insets included.
     let size: CGSize
-    /// Width (wide) or height (tall) of the details panel inside the safe area,
+    /// Width (wide) or height (tall) of the leading panel inside the safe area,
     /// chosen so the seam sits on the physical centre line.
     let leadingPanelLength: CGFloat
 

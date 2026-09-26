@@ -51,7 +51,7 @@ final class CookSession {
     /// The real wiring. Each session swaps its implementation in here, one line each.
     static func live() -> CookSession {
         CookSession(recipes: YouTubeRecipeSource.live(),
-                    images: NoStepImages(),
+                    images: RemoteImageProvider.fromInfoPlist() ?? NoStepImages(),
                     voice: SpeechVoiceControl(), speaker: SpeechSynthesizerSpeaker())
     }
 

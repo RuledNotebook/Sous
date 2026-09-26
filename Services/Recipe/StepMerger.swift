@@ -11,6 +11,8 @@ nonisolated struct StepCandidate: Hashable, Sendable {
     var needsTimer: Bool
     var tip: String = ""
     var imagePrompt: String = ""
+    var vessel: String = ""
+    var items: [String] = []
 
     // Provenance, used by the merge pass to pick the better of two duplicates.
     var windowIndex: Int = 0
@@ -182,8 +184,9 @@ nonisolated enum TimestampClamper {
 /// model's guess is capped (small models also say "15 minutes" for tossing pasta).
 nonisolated enum MinutesEstimator {
     static let maximumMinutes = 24 * 60
-    /// Longest plausible unspoken hands-on step (a big chop, kneading).
-    static let handsOnCap = 12
+    /// Longest plausible unspoken hands-on step; anything longer gets said out loud. Small
+    /// models answer "8" or "10" for almost everything, so this is the effective default.
+    static let handsOnCap = 5
     /// Longest plausible unspoken wait (a dough rise); anything longer is normally said out loud.
     static let waitingCap = 180
 
@@ -193,7 +196,9 @@ nonisolated enum MinutesEstimator {
         }
         // Floors come from the title only: "rest of the butter" in an instruction is not a rest.
         let floor = passiveFloor(for: title)
-        let cap = isHandsOn ? handsOnCap : waitingCap
+        // A long unspoken wait must be a recognisable one (bake, simmer, rest); "Serve, 15 min" is a guess.
+        let isWait = !isHandsOn && floor > 1
+        let cap = isWait ? waitingCap : handsOnCap
         return clamp(max(min(model, cap), floor))
     }
 
@@ -248,9 +253,9 @@ nonisolated enum MinutesEstimator {
         (["freeze"], 60),
         (["marinate", "chill", "refrigerate", "rise", "proof", "prove", "soak", "brine"], 30),
         (["bake", "roast"], 20),
-        (["simmer", "braise", "stew", "caramelize", "caramelise", "rest", "cool"], 15),
+        (["braise", "stew", "caramelize", "caramelise", "rest", "cool"], 15),
         (["preheat"], 10),
-        (["boil", "reduce", "steam", "knead", "poach"], 8),
+        (["simmer", "boil", "reduce", "steam", "knead", "poach"], 8),
         (["grill", "broil"], 6),
         (["fry", "fried", "sauté", "saute", "sear", "brown", "toast", "chop", "dice", "slice", "mince", "peel", "grate"], 3),
     ].map { (Set($0.0.map(StepMerger.stem)), $0.1) }

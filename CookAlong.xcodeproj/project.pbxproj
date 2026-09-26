@@ -8,6 +8,7 @@
 
 /* Begin PBXFileReference section */
 		C00CA10000000000000000A1 /* CookAlong.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CookAlong.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C00CA10000000000000000A3 /* CookAlong.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CookAlong.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -63,6 +64,7 @@
 				C00CA10000000000000000B4 /* Session */,
 				C00CA10000000000000000B5 /* Views */,
 				C00CA10000000000000000B6 /* Resources */,
+				C00CA10000000000000000D3 /* Config */,
 				C00CA10000000000000000D2 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -73,6 +75,14 @@
 				C00CA10000000000000000A1 /* CookAlong.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C00CA10000000000000000D3 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				C00CA10000000000000000A3 /* CookAlong.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -281,6 +291,7 @@
 		};
 		C00CA10000000000000000F4 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C00CA10000000000000000A3 /* CookAlong.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -317,6 +328,7 @@
 		};
 		C00CA10000000000000000F5 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C00CA10000000000000000A3 /* CookAlong.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
