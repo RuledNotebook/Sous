@@ -17,3 +17,5 @@ Package.resolved
 # macOS
 # Secrets never go in the repo (Info.plist keys are commented examples only)
 *.env
+# Real API keys (see Config/Secrets.xcconfig.example)
+Config/Secrets.xcconfig
