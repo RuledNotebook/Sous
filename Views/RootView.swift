@@ -3,8 +3,9 @@ import SwiftUI
 /// Adapts to the container, never to UIScreen (on iPhone Duo, UIScreen.main
 /// reports the outer display even while the app runs on the inner one).
 ///
-/// Closed: one cooking panel with a video sheet. Open: video and details share
-/// one side of the hinge, while the slideshow occupies the other side.
+/// Closed: one cooking panel with a video sheet. Open and wide: video and details share
+/// one side of the hinge, the slideshow the other. Open and tall: the video fills the
+/// upper display, the slideshow the lower.
 struct RootView: View {
     @Environment(CookSession.self) private var session
     @State private var showVideo = false
@@ -38,10 +39,13 @@ struct RootView: View {
                     }
                 } else {
                     VStack(spacing: 0) {
-                        VStack(spacing: 0) {
-                            VideoPanelView()
-                            DetailsPanelView()
-                                .frame(maxHeight: .infinity)
+                        Group {
+                            if session.phase == .ready, session.recipe?.videoID != nil {
+                                // The video takes the whole upper display; the slideshow below is untouched.
+                                VideoPanelView(fill: true)
+                            } else {
+                                DetailsPanelView()
+                            }
                         }
                         .frame(height: plan.leadingPanelLength)
                         .overlay(alignment: .bottom) { Seam(.horizontal) }

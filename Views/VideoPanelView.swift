@@ -11,16 +11,25 @@ nonisolated struct VideoSegment: Equatable, Sendable {
 /// the cook says it and pauses where the next step starts. Nothing shows until a recipe with a video is on.
 struct VideoPanelView: View {
     @Environment(CookSession.self) private var session
+    /// Fill whatever box the layout gives (the player letterboxes inside it); false keeps a 16:9 strip.
+    var fill = false
 
     var body: some View {
         if session.phase == .ready, let recipe = session.recipe, let videoID = recipe.videoID {
-            Color.black
-                .aspectRatio(16 / 9, contentMode: .fit)
+            let player = Color.black
                 .overlay { YouTubePlayerView(videoID: videoID, segment: segment(in: recipe), replay: session.videoReplays) }
                 .clipShape(.rect(cornerRadius: 14))
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
                 .accessibilityLabel("Cooking video")
+            if fill {
+                player
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(12)
+            } else {
+                player
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
+            }
         }
     }
 
