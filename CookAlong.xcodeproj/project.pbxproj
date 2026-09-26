@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		C00CA10000000000000000A3 /* CookAlong.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CookAlong.xcconfig; sourceTree = "<group>"; };
 		C00CA10000000000000000A1 /* CookAlong.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CookAlong.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C00CA10000000000000000A3 /* CookAlong.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CookAlong.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
