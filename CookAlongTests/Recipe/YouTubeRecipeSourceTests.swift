@@ -1,0 +1,162 @@
+import Foundation
+import Testing
+@testable import CookAlong
+
+// MARK: - Fakes (no network, no model)
+
+@MainActor
+final class FakeMetadata: VideoMetadataProvider {
+    var calls: [String] = []
+    var error: RecipeSourceError?
+    func metadata(for videoID: String) async throws -> VideoMetadata {
+        calls.append(videoID)
+        if let error { throw error }
+        return VideoMetadata(videoID: videoID, title: "Chicken Teriyaki Casserole", channel: "TheCooknShare",
+                             thumbnailURL: YouTubeLink.thumbnailURL(for: videoID))
+    }
+}
+
+@MainActor
+final class FakeTranscriptExtractor: TranscriptRecipeExtractor {
+    var isAvailable: Bool
+    var unavailableReason: String? { isAvailable ? nil : "Turn on Apple Intelligence in Settings." }
+    var received: [TranscriptLine] = []
+    var receivedDuration = 0.0
+    init(available: Bool) { isAvailable = available }
+    func recipe(from transcript: [TranscriptLine], videoDuration: Double) async throws -> Recipe {
+        received = transcript
+        receivedDuration = videoDuration
+        return Recipe(title: "from transcript", servings: 2, difficulty: "easy", ingredients: [], steps: [])
+    }
+}
+
+@MainActor
+final class FakeVideoExtractor: VideoRecipeExtractor {
+    var calls = 0
+    func recipe(for video: VideoMetadata) async throws -> Recipe {
+        calls += 1
+        return Recipe(title: "from video: \(video.title)", servings: 4, difficulty: "medium", ingredients: [], steps: [])
+    }
+}
+
+// MARK: - Choosing a path
+
+@MainActor
+struct YouTubeRecipeSourceTests {
+    let link = "https://youtu.be/4aZr5hZXP_s?si=share"
+    let transcript = "0:05\nhey guys\n0:20\ncube up the chicken\n1:02\ninto the oven for 25 minutes"
+
+    @Test func transcriptPlusOnDeviceGoesOnDevice() async throws {
+        let onDevice = FakeTranscriptExtractor(available: true)
+        let cloud = FakeVideoExtractor()
+        let source = YouTubeRecipeSource(metadata: FakeMetadata(), transcriptExtractor: onDevice, videoExtractor: cloud)
+        let result = try await source.recipe(for: RecipeRequest(link: link, pastedTranscript: transcript))
+        #expect(result.path == .onDeviceTranscript)
+        #expect(result.recipe.title == "from transcript")
+        #expect(result.video.title == "Chicken Teriyaki Casserole")
+        #expect(result.video.watchURL.absoluteString == "https://www.youtube.com/watch?v=4aZr5hZXP_s")
+        #expect(onDevice.received.map(\.start) == [5, 20, 62])
+        #expect(onDevice.receivedDuration == 62 + 15)
+        #expect(cloud.calls == 0)
+    }
+
+    @Test func transcriptWithoutOnDeviceUsesTheKey() async throws {
+        let cloud = FakeVideoExtractor()
+        let source = YouTubeRecipeSource(metadata: FakeMetadata(), transcriptExtractor: FakeTranscriptExtractor(available: false), videoExtractor: cloud)
+        let result = try await source.recipe(for: RecipeRequest(link: link, pastedTranscript: transcript))
+        #expect(result.path == .geminiVideo)
+        #expect(cloud.calls == 1)
+    }
+
+    @Test func noTranscriptUsesTheKeyEvenWhenOnDeviceIsAvailable() async throws {
+        let onDevice = FakeTranscriptExtractor(available: true)
+        let cloud = FakeVideoExtractor()
+        let source = YouTubeRecipeSource(metadata: FakeMetadata(), transcriptExtractor: onDevice, videoExtractor: cloud)
+        let result = try await source.recipe(for: RecipeRequest(link: link, pastedTranscript: "   "))
+        #expect(result.path == .geminiVideo)
+        #expect(result.recipe.title == "from video: Chicken Teriyaki Casserole")
+        #expect(onDevice.received.isEmpty)
+    }
+
+    @Test func nothingAvailableSaysExactlyWhatToDo() async {
+        let source = YouTubeRecipeSource(metadata: FakeMetadata(), transcriptExtractor: FakeTranscriptExtractor(available: true), videoExtractor: nil)
+        await #expect(throws: RecipeSourceError.nothingAvailable(hasTranscript: false, onDeviceReason: nil)) {
+            try await source.recipe(for: RecipeRequest(link: link))
+        }
+        let message = RecipeSourceError.nothingAvailable(hasTranscript: false, onDeviceReason: nil).errorDescription ?? ""
+        #expect(message.contains("Show transcript"))
+        #expect(message.contains("GEMINI_API_KEY"))
+
+        let noDevice = YouTubeRecipeSource(metadata: FakeMetadata(), transcriptExtractor: FakeTranscriptExtractor(available: false), videoExtractor: nil)
+        await #expect(throws: RecipeSourceError.nothingAvailable(hasTranscript: true, onDeviceReason: "Turn on Apple Intelligence in Settings.")) {
+            try await noDevice.recipe(for: RecipeRequest(link: link, pastedTranscript: transcript))
+        }
+        let withReason = RecipeSourceError.nothingAvailable(hasTranscript: true, onDeviceReason: "Turn on Apple Intelligence in Settings.").errorDescription ?? ""
+        #expect(withReason.hasPrefix("Turn on Apple Intelligence"))
+        #expect(withReason.contains("GEMINI_API_KEY"))
+    }
+
+    @Test func unreadableTranscriptFallsBackToTheKeyOrExplains() async throws {
+        let cloud = FakeVideoExtractor()
+        let withKey = YouTubeRecipeSource(metadata: FakeMetadata(), transcriptExtractor: FakeTranscriptExtractor(available: true), videoExtractor: cloud)
+        let result = try await withKey.recipe(for: RecipeRequest(link: link, pastedTranscript: "my own notes, no times"))
+        #expect(result.path == .geminiVideo)
+
+        let withoutKey = YouTubeRecipeSource(metadata: FakeMetadata(), transcriptExtractor: FakeTranscriptExtractor(available: true), videoExtractor: nil)
+        await #expect(throws: RecipeSourceError.transcriptUnreadable) {
+            try await withoutKey.recipe(for: RecipeRequest(link: link, pastedTranscript: "my own notes, no times"))
+        }
+    }
+
+    @Test func badLinksFailBeforeAnyNetworkCall() async {
+        let metadata = FakeMetadata()
+        let source = YouTubeRecipeSource(metadata: metadata, transcriptExtractor: FakeTranscriptExtractor(available: true), videoExtractor: FakeVideoExtractor())
+        await #expect(throws: RecipeSourceError.notAYouTubeLink) {
+            try await source.recipe(for: RecipeRequest(link: "https://vimeo.com/1"))
+        }
+        await #expect(throws: RecipeSourceError.noVideoInLink) {
+            try await source.recipe(for: RecipeRequest(link: "https://www.youtube.com/@channel"))
+        }
+        #expect(metadata.calls.isEmpty)
+    }
+
+    @Test func unavailableVideoIsReported() async {
+        let metadata = FakeMetadata()
+        metadata.error = .videoUnavailable
+        let source = YouTubeRecipeSource(metadata: metadata, transcriptExtractor: FakeTranscriptExtractor(available: true), videoExtractor: FakeVideoExtractor())
+        await #expect(throws: RecipeSourceError.videoUnavailable) {
+            try await source.recipe(for: RecipeRequest(link: link))
+        }
+    }
+}
+
+// MARK: - oEmbed
+
+@MainActor
+struct YouTubeMetadataTests {
+    @Test func parsesOEmbedJSON() throws {
+        let json = #"{"title":"Chicken Teriyaki Casserole","author_name":"TheCooknShare","author_url":"https://www.youtube.com/@TheCooknShare","type":"video","thumbnail_url":"https://i.ytimg.com/vi/4aZr5hZXP_s/hqdefault.jpg","html":"<iframe></iframe>"}"#
+        let meta = try YouTubeOEmbedMetadataProvider.parse(Data(json.utf8), videoID: "4aZr5hZXP_s")
+        #expect(meta.title == "Chicken Teriyaki Casserole")
+        #expect(meta.channel == "TheCooknShare")
+        #expect(meta.thumbnailURL.absoluteString == "https://i.ytimg.com/vi/4aZr5hZXP_s/hqdefault.jpg")
+        #expect(meta.watchURL.absoluteString == "https://www.youtube.com/watch?v=4aZr5hZXP_s")
+    }
+
+    @Test func fallsBackToTheStaticThumbnail() throws {
+        let meta = try YouTubeOEmbedMetadataProvider.parse(Data(#"{"title":"  ","author_name":null}"#.utf8), videoID: "4aZr5hZXP_s")
+        #expect(meta.thumbnailURL.absoluteString == "https://i.ytimg.com/vi/4aZr5hZXP_s/hqdefault.jpg")
+        #expect(meta.title == "YouTube video")
+        #expect(meta.channel == "")
+        #expect(YouTubeOEmbedMetadataProvider.fallback(for: "4aZr5hZXP_s") == meta)
+    }
+
+    @Test func buildsTheOEmbedURL() {
+        let url = YouTubeOEmbedMetadataProvider.endpoint(for: "4aZr5hZXP_s")
+        #expect(url.host == "www.youtube.com")
+        #expect(url.path == "/oembed")
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        #expect(items.first { $0.name == "url" }?.value == "https://www.youtube.com/watch?v=4aZr5hZXP_s")
+        #expect(items.first { $0.name == "format" }?.value == "json")
+    }
+}
