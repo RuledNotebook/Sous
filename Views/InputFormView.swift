@@ -19,12 +19,13 @@ struct InputFormView: View {
                         .frame(width: 60, height: 60)
                         .clipShape(.rect(cornerRadius: 14))
                         .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Cook along to a YouTube video")
-                            .font(.title2.weight(.bold))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(Self.appName)
+                            .font(.largeTitle.weight(.bold))
                             .accessibilityAddTraits(.isHeader)
-                        Text("Paste the link. You get step-by-step slides with real kitchen times.")
+                        Text("Paste a YouTube cooking video and cook along to it, step by step, with real kitchen times.")
                             .font(.subheadline).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
@@ -131,6 +132,12 @@ struct InputFormView: View {
             .frame(minHeight: 44)
             .disabled(session.phase == .working)
             .accessibilityLabel("Show the demo recipe")
+    }
+
+    /// Whatever the bundle is called, so a rename in the project shows up here too.
+    private static var appName: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        return (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? "CookAlong"
     }
 
     private var wordCount: Int {
